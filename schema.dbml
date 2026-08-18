@@ -1,0 +1,84 @@
+// Use DBML to define your database structure
+// Docs: https://dbml.dbdiagram.io/docs
+
+Table organizations {
+  id integer [primary key]
+  name varchar [not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table users {
+  id integer [primary key]
+  name varchar
+  email varchar [not null, unique]
+  password varchar
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table organization_memberships {
+  id integer [primary key]
+  user_id integer [not null]
+  organization_id integer [not null]
+  role_id integer
+  created_at timestamp
+  updated_at timestamp
+
+  indexes {
+    (user_id, organization_id) [unique]
+  }
+}
+
+Table content_types {
+  id integer [primary key]
+  organization_id integer [not null]
+  name varchar [not null]
+  slug varchar [not null]
+  created_at timestamp
+  updated_at timestamp
+
+  indexes {
+    (organization_id, slug) [unique]
+  }
+}
+
+Table content_type_versions {
+  id integer [primary key]
+  content_type_id integer [not null]
+  version_number integer [not null]
+  schema jsonb [not null]
+  created_at timestamp
+
+  indexes {
+    (content_type_id, version_number) [unique]
+  }
+}
+
+Table fields {
+  id integer [primary key]
+  content_type_id integer [not null]
+  name varchar [not null]
+  data_type varchar
+  required boolean
+
+  indexes {
+    (content_type_id, name) [unique]
+  }
+}
+
+Table entries {
+  id integer [primary key]
+  content_type_version_id integer [not null]
+  data jsonb [not null]
+  created_at timestamp
+  updated_at timestamp
+}
+
+// Relationships
+Ref: content_types.organization_id > organizations.id
+Ref: content_type_versions.content_type_id > content_types.id
+Ref: fields.content_type_id > content_types.id
+Ref: organization_memberships.user_id > users.id
+Ref: organization_memberships.organization_id > organizations.id
+Ref: entries.content_type_version_id > content_type_versions.id
