@@ -26,3 +26,40 @@ class ContentType(models.Model):
 
     def __str__(self):
         return self.name
+
+# Content versioning
+class ContentTypeVersion(models.Model):
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.PROTECT,
+        related_name="versions",
+    )
+    version_number = models.IntegerField()
+    schema = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["content_type", "version_number"],
+                name="unique_content_type_version",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.content_type} v{self.version_number}"
+
+
+# Entries
+class Entry(models.Model):
+    content_type_version = models.ForeignKey(
+        ContentTypeVersion,
+        on_delete=models.PROTECT,
+        related_name="entries",
+    )
+    data = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Entry #{self.id} ({self.content_type_version.content_type})"
