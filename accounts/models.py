@@ -54,7 +54,7 @@ class OrganizationMembership(models.Model):
         on_delete=models.CASCADE,
         related_name="memberships",
     )
-    role_id = models.IntegerField(null=True, blank=True)
+    role_id = models.IntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

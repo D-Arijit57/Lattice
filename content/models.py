@@ -63,3 +63,25 @@ class Entry(models.Model):
 
     def __str__(self):
         return f"Entry #{self.id} ({self.content_type_version.content_type})"
+
+# Fields
+class Field(models.Model):
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.PROTECT,
+        related_name="fields"
+    )
+    name = models.CharField(max_length=255)
+    data_type = models.CharField(max_length=255)
+    required = models.BooleanField(default = True)
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["content_type", "name"],
+                name="unique_content_field",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.content_type})"
