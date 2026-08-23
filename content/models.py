@@ -2,7 +2,7 @@ from django.db import models
 
 from accounts.models import Organization
 
-
+# Content Type
 class ContentType(models.Model):
     # organization represents the relatioship in Django's object model here, while organization_id is the physical foreign key column django creates in the relational database
     # so doing content.organization_id returns you the primary key value instead of the related object
