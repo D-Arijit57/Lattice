@@ -3,7 +3,6 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 from content.models import ContentType
 
-
 class CurrentOrganizationDefault:
     # When DRF needs a value don't ask from the client, get it from serializer's context
     requires_context = True
