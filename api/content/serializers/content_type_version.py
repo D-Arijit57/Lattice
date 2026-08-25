@@ -1,13 +1,14 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 from content.models import ContentTypeVersion
-    
-class CurrentContentTypeDefault : 
+from content.services.versioning import create_content_type_version
+
+class CurrentContentTypeDefault :
     requires_context = True
-    
-    def __call__(self, serializer_field) : 
+
+    def __call__(self, serializer_field) :
         return serializer_field.context["content_type"]
-     
+
 class ContentTypeVersionSerializer(serializers.ModelSerializer):
     # hidden: never accepted from the client, always filled in from context
     # (the view already resolved and verified this content_type)
@@ -34,3 +35,11 @@ class ContentTypeVersionSerializer(serializers.ModelSerializer):
                 fields=["content_type", "version_number"],
             )
         ]
+        
+    # this doesn't execute during serializer.is_valid()
+    # using the content_versioning service
+    def create(self, validated_data):
+        return create_content_type_version(
+            content_type=validated_data["content_type"],
+            schema=validated_data["schema"],
+        )
