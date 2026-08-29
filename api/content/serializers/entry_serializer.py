@@ -15,6 +15,12 @@ class EntrySerializer(serializers.ModelSerializer):
     # (the view already resolved and verified the latest version)
     content_type_version = serializers.HiddenField(default=CurrentContentTypeVersionDefault())
     content_type_version_id = serializers.IntegerField(read_only=True)
+    # which schema version this entry is bound to - handy on read responses so
+    # a client doesn't need a second call to the version endpoint to find out
+    version_number = serializers.IntegerField(
+        source="content_type_version.version_number",
+        read_only=True,
+    )
 
     # the actual entry payload; any JSON object for now, no schema check yet
     data = serializers.JSONField()
@@ -25,6 +31,7 @@ class EntrySerializer(serializers.ModelSerializer):
             "id",
             "content_type_version",
             "content_type_version_id",
+            "version_number",
             "data",
             "created_at",
             "updated_at",
