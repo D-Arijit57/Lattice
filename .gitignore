@@ -4,4 +4,6 @@ __pycache__/
 venv
 Decisions.md
 Mistakes.md
-
+Auth-audit.md
+conftest.py
+pytest.ini
