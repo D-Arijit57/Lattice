@@ -4,7 +4,7 @@ from django.db import models
 
 # Organization
 # models.model is the base class for django for database_backed models
-# interpretation - Organization is a database entity. Take the fields I define inside this class and use them to construct/manage the corresponding database table.
+# interpretation : Organization is a database entity. Take the fields I define inside this class and use them to construct/manage the corresponding database table.
 # django fields are non-null by default
 class Organization(models.Model):
     name = models.CharField(max_length=255)

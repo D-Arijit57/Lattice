@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -130,3 +131,23 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# DEFAULT_AUTHENTICATION_CLASSES tells DRF how to turn an incoming request
+# into request.user. JWTAuthentication reads "Authorization: Bearer <token>",
+# checks the signature against SECRET_KEY, and if it's valid + not expired,
+# loads the User named in the token's payload - no database lookup for the
+# token itself (Decision 79/81).
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+}
+
+# Token lifetimes. Short-lived access token limits how long a leaked token
+# stays useful, since V1 has no server-side revoke (Decision 80). The
+# refresh token is what the client trades in for a new access token once
+# it expires, via POST /api/auth/refresh/.
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+}
