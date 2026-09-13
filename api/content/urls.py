@@ -7,6 +7,7 @@ from api.content.views import (
     ContentTypeViewSet,
     ContentTypeVersionViewSet,
     EntryViewSet,
+    FieldViewSet,
 )
 
 # Each ViewSet becomes two plain views: one bound to the collection URL
@@ -22,6 +23,9 @@ version_detail = ContentTypeVersionViewSet.as_view({"get": "retrieve"})
 
 entry_list = EntryViewSet.as_view({"get": "list", "post": "create"})
 entry_detail = EntryViewSet.as_view({"get": "retrieve"})
+
+field_list = FieldViewSet.as_view({"get": "list", "post": "create"})
+field_detail = FieldViewSet.as_view({"get": "retrieve"})
 
 urlpatterns = [
     path(
@@ -53,5 +57,15 @@ urlpatterns = [
         "organizations/<int:organization_id>/content-types/<int:content_type_id>/entries/<int:pk>/",
         entry_detail,
         name="entry-detail",
+    ),
+    path(
+        "organizations/<int:organization_id>/content-types/<int:content_type_id>/fields/",
+        field_list,
+        name="field-list",
+    ),
+    path(
+        "organizations/<int:organization_id>/content-types/<int:content_type_id>/fields/<int:pk>/",
+        field_detail,
+        name="field-detail",
     ),
 ]

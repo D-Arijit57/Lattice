@@ -2,11 +2,12 @@ from rest_framework import mixins, permissions, viewsets
 from rest_framework.exceptions import NotFound, PermissionDenied
 
 from accounts.models import Organization, OrganizationMembership
-from content.models import ContentType, ContentTypeVersion, Entry
+from content.models import ContentType, ContentTypeVersion, Entry, Field
 
 from api.content.serializers import ContentTypeSerializer
 from api.content.serializers import ContentTypeVersionSerializer
 from api.content.serializers import EntrySerializer
+from api.content.serializers import FieldSerializer
 from api.content.pagination import EntryCursorPagination
 
 
@@ -168,6 +169,36 @@ class ContentTypeVersionViewSet(ContentTypeScopedViewSet):
         context = super().get_serializer_context()
         # ContentTypeVersionSerializer.content_type is a HiddenField whose
         # default (CurrentContentTypeDefault) reads context["content_type"].
+        context["content_type"] = self.get_content_type()
+        return context
+
+
+class FieldViewSet(ContentTypeScopedViewSet):
+    """
+    list     -> GET  .../content-types/<ct>/fields/
+    retrieve -> GET  .../content-types/<ct>/fields/<pk>/
+    create   -> POST .../content-types/<ct>/fields/
+
+    These are the *current, live* field definitions for a content type -
+    editing them has no effect on ContentTypeVersions already cut. Schema
+    generation (next task) reads whatever Fields exist here at the moment a
+    new version is created.
+    """
+
+    serializer_class = FieldSerializer
+
+    def get_queryset(self):
+        content_type = self.get_content_type()
+        return (
+            Field.objects
+            .filter(content_type=content_type)
+            .order_by("name")
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        # FieldSerializer.content_type is a HiddenField whose default
+        # (CurrentContentTypeDefault) reads context["content_type"].
         context["content_type"] = self.get_content_type()
         return context
 

@@ -1,5 +1,6 @@
 import pytest
 from django.urls import reverse
+#reverse() is a utility function used to dynamically generate URL paths based on a target view's name or pattern name
 
 SIGNUPURL = reverse("signup")  # -> "/api/auth/signup/"
 LOGIN_URL = reverse("token-obtain-pair")  # -> "/api/auth/login/"
