@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 from content.models import ContentTypeVersion
@@ -15,7 +16,10 @@ class ContentTypeVersionSerializer(serializers.ModelSerializer):
     content_type = serializers.HiddenField(default=CurrentContentTypeDefault())
     content_type_id = serializers.IntegerField(read_only=True)
 
-    schema = serializers.JSONField()
+    # generated server-side from this ContentType's Fields (Decision 20:
+    # Fields are the single source of truth) - read-only, never accepted
+    # from the client anymore.
+    schema = serializers.JSONField(read_only=True)
     version_number = serializers.IntegerField(read_only=True)
 
     class Meta:
@@ -28,7 +32,7 @@ class ContentTypeVersionSerializer(serializers.ModelSerializer):
             "schema",
             "created_at"
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id", "created_at", "schema"]
         validators = [
             UniqueTogetherValidator(
                 queryset=ContentTypeVersion.objects.all(),
@@ -39,7 +43,12 @@ class ContentTypeVersionSerializer(serializers.ModelSerializer):
     # this doesn't execute during serializer.is_valid()
     # using the content_versioning service
     def create(self, validated_data):
-        return create_content_type_version(
-            content_type=validated_data["content_type"],
-            schema=validated_data["schema"],
-        )
+        # create_content_type_version() raises Django's ValidationError
+        # (not DRF's) when the ContentType has no Fields yet - same
+        # translate-then-reraise pattern as SignupSerializer.validate_password.
+        try:
+            return create_content_type_version(
+                content_type=validated_data["content_type"],
+            )
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))

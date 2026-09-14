@@ -2,13 +2,14 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
 from content.models import Field
+from content.services.schema_generation import TYPE_MAP
 from api.content.serializers.content_type_version import CurrentContentTypeDefault
 
-# V1 data types a Field can declare. Kept as a plain module-level set (not a
-# model.TextChoices) so it lives next to the validation that uses it -
-# schema generation (next task) will need this same list to map each value
-# to a JSON Schema type.
-ALLOWED_DATA_TYPES = {"string", "number", "boolean", "date"}
+# V1 data types a Field can declare. Derived from TYPE_MAP (schema_generation.py)
+# instead of a separate literal set, so the two can never drift apart - a
+# data_type that validates here is guaranteed to have a mapping when
+# generate_schema() runs later.
+ALLOWED_DATA_TYPES = set(TYPE_MAP.keys())
 
 
 class FieldSerializer(serializers.ModelSerializer):
