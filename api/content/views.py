@@ -171,7 +171,7 @@ class ContentTypeVersionViewSet(ContentTypeScopedViewSet):
         # default (CurrentContentTypeDefault) reads context["content_type"].
         context["content_type"] = self.get_content_type()
         return context
-
+    
 
 class FieldViewSet(ContentTypeScopedViewSet):
     """
