@@ -30,7 +30,10 @@ def test_authenticated_user_can_create_org(api_client, user):
 def test_anonymous_user_cannot_create_org(api_client):
     # No force_authenticate() call this time.
     # act: POST {"name": "Acme"} without logging in.
-    # assert: response.status_code == 403, and Organization.objects.count() == 0
+    # assert: response.status_code == 401 (not 403 - JWTAuthentication is the
+    #         sole authentication class and implements authenticate_header(),
+    #         so DRF raises NotAuthenticated for a request with no credentials
+    #         at all, see Decision 87), and Organization.objects.count() == 0
     pytest.skip("your turn")
 
 
