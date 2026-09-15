@@ -5,7 +5,8 @@ every fixture defined here available to all test modules, with no import.
 import pytest
 from rest_framework.test import APIClient
 
-from accounts.models import User
+from accounts.models import Organization, User
+from content.models import ContentType
 
 
 @pytest.fixture
@@ -13,6 +14,16 @@ def api_client():
     # A fresh DRF test client per test. Same object as `self.client` was
     # in APITestCase - it speaks JSON and can fake authentication.
     return APIClient()
+
+
+@pytest.fixture
+def content_type(db):
+    # An Organization + ContentType, with no Fields attached - tests that
+    # need Fields create them against this ContentType.
+    organization = Organization.objects.create(name="Netflix")
+    return ContentType.objects.create(
+        organization=organization, name="Movie", slug="movie"
+    )
 
 
 @pytest.fixture
