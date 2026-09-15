@@ -1,5 +1,5 @@
 import pytest
-
+from content.services import schema_generation
 # These test the service layer directly (content/services/), not through the
 # API - no api_client/user needed, just the `db` fixture pytest-django gives
 # every @pytest.mark.django_db test access to.
