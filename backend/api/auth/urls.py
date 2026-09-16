@@ -1,7 +1,7 @@
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
-from api.auth.views import SignupView
+from api.auth.views import SignupView, CookieTokenObtainPairView
 
 # TokenObtainPairView checks email+password (via check_password) and
 # returns {"access": ..., "refresh": ...}. TokenRefreshView trades a
@@ -9,6 +9,6 @@ from api.auth.views import SignupView
 # that's why we don't need a loginView and loginSerializer for that
 urlpatterns = [
     path("signup/", SignupView.as_view(), name="signup"),
-    path("login/", TokenObtainPairView.as_view(), name="token-obtain-pair"),
+    path("login/", CookieTokenObtainPairView.as_view(), name="token-obtain-pair"),
     path("refresh/", TokenRefreshView.as_view(), name="token-refresh"),
 ]
