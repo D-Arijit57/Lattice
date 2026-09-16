@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'accounts',
     'content',
     'api',
+    'corsheaders',
 ]
 
 AUTH_USER_MODEL = 'accounts.User'
@@ -49,12 +50,24 @@ AUTH_USER_MODEL = 'accounts.User'
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+
+CORS_ALLOWED_ORIGINS =[
+    "http://localhost:3000",
+]
+
+# Required whenever the frontend sends fetch(..., { credentials: 'include' }).
+# Cannot be combined with CORS_ALLOW_ALL_ORIGINS=True - the CORS spec
+# forbids "any origin" + "send credentials" together, since that would
+# defeat the point of scoping cookies to trusted origins.
+CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'content_engine.urls'
 
