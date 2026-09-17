@@ -1,7 +1,12 @@
 from django.urls import path
-from rest_framework_simplejwt.views import TokenRefreshView
 
-from api.auth.views import SignupView, CookieTokenObtainPairView
+from api.auth.views import (
+    SignupView,
+    CookieTokenObtainPairView,
+    CookieTokenRefreshView,
+    LogoutView,
+    MeView,
+)
 
 # TokenObtainPairView checks email+password (via check_password) and
 # returns {"access": ..., "refresh": ...}. TokenRefreshView trades a
@@ -10,5 +15,7 @@ from api.auth.views import SignupView, CookieTokenObtainPairView
 urlpatterns = [
     path("signup/", SignupView.as_view(), name="signup"),
     path("login/", CookieTokenObtainPairView.as_view(), name="token-obtain-pair"),
-    path("refresh/", TokenRefreshView.as_view(), name="token-refresh"),
+    path("refresh/", CookieTokenRefreshView.as_view(), name="token-refresh"),
+    path("logout/", LogoutView.as_view(), name="logout"),
+    path("me/", MeView.as_view(), name="me"),
 ]

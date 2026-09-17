@@ -61,6 +61,7 @@ MIDDLEWARE = [
 
 CORS_ALLOWED_ORIGINS =[
     "http://localhost:3000",
+    "http://localhost:3001"
 ]
 
 # Required whenever the frontend sends fetch(..., { credentials: 'include' }).
@@ -152,7 +153,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # token itself (Decision 79/81).
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'api.auth.authentication.CookieJWTAuthentication',
     ],
 }
 
