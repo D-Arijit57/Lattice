@@ -4,14 +4,25 @@ import { LayoutDashboard, Database, FileText, Code2, Activity, Settings, UserCir
 import { cn } from "@/lib/utils"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/lib/auth-context"
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
+}
 
 function Sidebar() {
   const location = useLocation()
-  
+  const { user, logout } = useAuth()
+
   return (
     <div className="hidden md:flex h-screen w-64 flex-col border-r border-neutral-200 bg-white shrink-0">
       <div className="p-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold tracking-tight">Loom</h1>
+        <h1 className="font-logo text-2xl text-neutral-900 leading-none">Loom</h1>
       </div>
       
       <div className="px-4 py-2">
@@ -144,11 +155,11 @@ function Sidebar() {
           <DropdownMenuTrigger asChild>
             <button className="flex w-full items-center gap-3 rounded-md p-2 hover:bg-neutral-50 text-left">
               <div className="h-8 w-8 rounded-full bg-neutral-200 flex items-center justify-center font-medium text-neutral-700">
-                AD
+                {user ? initials(user.name) : ""}
               </div>
               <div className="flex-1 overflow-hidden text-sm">
-                <p className="truncate font-medium text-neutral-900">Arijit Das</p>
-                <p className="truncate text-xs text-neutral-500">Free Plan</p>
+                <p className="truncate font-medium text-neutral-900">{user?.name}</p>
+                <p className="truncate text-xs text-neutral-500">{user?.email}</p>
               </div>
               <span className="text-neutral-400 text-xs">▼</span>
             </button>
@@ -160,7 +171,7 @@ function Sidebar() {
             <DropdownMenuItem>Billing</DropdownMenuItem>
             <DropdownMenuItem>Preferences</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Log out</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => logout()}>Log out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

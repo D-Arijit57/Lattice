@@ -1,10 +1,10 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
 
 from api.auth.serializers.signup_serializer import SignupSerializer
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.settings import api_settings
 from django.conf import settings
 
@@ -72,3 +72,64 @@ class CookieTokenObtainPairView(TokenObtainPairView):
         )
 
         return response
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        # Stock TokenRefreshView reads the refresh token from
+        # request.data["refresh"]. Ours lives in the refresh_token cookie
+        # instead (scoped to this path, see CookieTokenObtainPairView), so
+        # we copy it into request.data before handing off to the stock
+        # implementation - everything else about token validation and
+        # rotation stays exactly as simplejwt does it.
+        refresh_token = request.COOKIES.get("refresh_token")
+        if refresh_token is None:
+            return Response(
+                {"detail": "Refresh token cookie not found."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        request.data["refresh"] = refresh_token
+        response = super().post(request, *args, **kwargs)
+
+        # super().post() returns {"access": ...} (rotation is off by
+        # default, so no new refresh token comes back here). Same
+        # pop-then-cookie treatment as login: the new access token must
+        # never reach response.data, only the cookie.
+        access_token = response.data.pop("access")
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="Lax",
+            path="/",
+            max_age=int(api_settings.ACCESS_TOKEN_LIFETIME.total_seconds()),
+        )
+        return response
+
+
+class LogoutView(APIView):
+    def post(self, request):
+        # delete_cookie() only works if the Path matches how the cookie was
+        # set - the refresh_token cookie was scoped to
+        # /api/auth/refresh/, so it has to be deleted with that same path
+        # or the browser will silently keep it.
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        response.delete_cookie("access_token", path="/")
+        response.delete_cookie("refresh_token", path="/api/auth/refresh/")
+        return response 
+
+
+class MeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # No serializer needed - this is intentionally minimal, just enough
+        # for the frontend to know who's logged in. Never include password
+        # or anything else sensitive here.
+        return Response({
+            "id": request.user.id,
+            "email": request.user.email,
+            "name": request.user.name,
+        })

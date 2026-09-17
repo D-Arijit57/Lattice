@@ -9,7 +9,7 @@ export function WorkspaceOverview() {
     <div className="p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Overview</h2>
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-neutral-900">Overview</h2>
           <p className="text-neutral-500 mt-1">Your content types, recent activity and quick access.</p>
         </div>
         <div className="text-sm text-neutral-500 font-medium font-mono">
@@ -81,7 +81,7 @@ export function WorkspaceOverview() {
         <div className="space-y-6">
           <Card>
             <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-base font-semibold">Recent Activity</CardTitle>
+              <CardTitle className="font-display text-base font-semibold">Recent Activity</CardTitle>
               <Button variant="link" className="px-0 text-sm h-auto font-normal">View all</Button>
             </CardHeader>
             <CardContent className="space-y-4">
