@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from content.models import Entry
+from content.services.entry_validation import validate_entry_data
 
 
 class CurrentContentTypeVersionDefault:
@@ -22,8 +23,22 @@ class EntrySerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
-    # the actual entry payload; any JSON object for now, no schema check yet
+    # the actual entry payload; JSONField only guarantees well-formed JSON,
+    # the shape is checked in validate_data() below
     data = serializers.JSONField()
+
+    def validate_data(self, value):
+        # validate against the *pinned* version's stored schema (the same
+        # version the view resolved and this entry will be saved under),
+        # never the live Fields - Fields can change after that version was cut
+        schema = self.context["content_type_version"].schema
+        # the service returns {field: [messages]}; empty means valid
+        errors = validate_entry_data(schema, value)
+        if errors:
+            # DRF nests this under "data" on its own, so the response is
+            # {"data": {"price": ["Must be a number."]}}
+            raise serializers.ValidationError(errors)
+        return value
 
     class Meta:
         model = Entry

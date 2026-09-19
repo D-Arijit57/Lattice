@@ -2,7 +2,10 @@ import pytest
 from django.urls import reverse
 
 from accounts.models import Organization, OrganizationMembership
-from content.models import ContentType, Field
+from api.content.serializers import EntrySerializer
+from content.models import ContentType, ContentTypeVersion, Entry, Field
+from content.services.entry_validation import NON_FIELD_ERRORS
+from content.services.versioning import create_content_type_version
 
 
 @pytest.mark.django_db
@@ -357,3 +360,185 @@ def test_entry_list_is_paginated(api_client, user):
     #         list like Field's unpaginated list), len(results) == 50, and
     #         response.data["next"] is not None
     pytest.skip("your turn")
+
+
+# --- EntrySerializer schema validation ---------------------------------------
+# Serializer-level tests: no request, no db. The view normally puts the latest
+# version into the serializer context, so here an unsaved ContentTypeVersion
+# stands in for it.
+
+PRODUCT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "price": {"type": "number"},
+    },
+    "required": ["title", "price"],
+    "additionalProperties": False,
+}
+
+
+def make_entry_serializer(data):
+    version = ContentTypeVersion(version_number=1, schema=PRODUCT_SCHEMA)
+    return EntrySerializer(data={"data": data}, context={"content_type_version": version})
+
+
+def test_entry_serializer_accepts_valid_data():
+    serializer = make_entry_serializer({"title": "Shirt", "price": 499})
+    assert serializer.is_valid(), serializer.errors
+    # the validated payload must come through untouched, this is what save() writes
+    assert serializer.validated_data["data"] == {"title": "Shirt", "price": 499}
+
+
+def test_entry_serializer_rejects_data_that_breaks_the_schema():
+    serializer = make_entry_serializer({"title": "Shirt", "price": "banana"})
+    assert not serializer.is_valid()
+    # per-field messages nested under "data" - the shape the frontend will read
+    assert serializer.errors["data"] == {"price": ["Must be a number."]}
+
+
+def test_entry_serializer_reports_every_error_at_once():
+    serializer = make_entry_serializer({"price": "x", "hax": 1})
+    assert not serializer.is_valid()
+    assert serializer.errors["data"] == {
+        "title": ["This field is required."],
+        "price": ["Must be a number."],
+        "hax": ["Unknown field."],
+    }
+
+
+def test_entry_serializer_rejects_a_payload_that_is_not_an_object():
+    serializer = make_entry_serializer([1, 2, 3])
+    assert not serializer.is_valid()
+    assert serializer.errors["data"] == {NON_FIELD_ERRORS: ["Must be a JSON object."]}
+
+
+# --- Entry endpoint: schema validation through the real request flow ---------
+# Unlike the serializer tests above, these go through URL routing, auth, the
+# membership check, the view (which resolves the latest version) and Postgres.
+
+@pytest.fixture
+def product_setup(user):
+    # The state an Entry POST needs, in dependency order: `user` is a member of
+    # an Organization that owns a "Product" ContentType with two required
+    # Fields and one published version (no version -> the view returns 404).
+    organization = Organization.objects.create(name="Amazon")
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    content_type = ContentType.objects.create(
+        organization=organization, name="Product", slug="product"
+    )
+    Field.objects.create(
+        content_type=content_type, name="title", data_type="string", required=True
+    )
+    Field.objects.create(
+        content_type=content_type, name="price", data_type="number", required=True
+    )
+    version = create_content_type_version(content_type=content_type)
+    return organization, content_type, version
+
+
+@pytest.mark.django_db
+def test_entry_endpoint_valid_entry_is_created(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-list", args=[organization.id, content_type.id])
+    payload = {"title": "Shirt", "price": 499}
+
+    # the body is {"data": {...}} because the serializer's field is called "data"
+    response = api_client.post(url, {"data": payload}, format="json")
+
+    # three checks: the status, the body a client will read, and the database
+    assert response.status_code == 201
+    assert response.data["data"] == payload
+    entry = Entry.objects.get(id=response.data["id"])
+    assert entry.data == payload
+    # pinned to the version that was validated against (Decision 42)
+    assert entry.content_type_version == version
+
+
+@pytest.mark.django_db
+def test_entry_endpoint_rejects_wrong_type_and_saves_nothing(api_client, user, product_setup):
+    organization, content_type, _ = product_setup
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-list", args=[organization.id, content_type.id])
+
+    response = api_client.post(
+        url, {"data": {"title": "Shirt", "price": "banana"}}, format="json"
+    )
+
+    assert response.status_code == 400
+    # errors sit under "data" (the field name), then under the payload's own field
+    assert response.data["data"] == {"price": ["Must be a number."]}
+    # rejected at the door: nothing may reach the database
+    assert Entry.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_entry_endpoint_reports_every_error_at_once(api_client, user, product_setup):
+    organization, content_type, _ = product_setup
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-list", args=[organization.id, content_type.id])
+
+    # one of each: a required field missing, a wrong type, an unknown field
+    response = api_client.post(
+        url, {"data": {"price": "x", "hax": 1}}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert response.data["data"] == {
+        "title": ["This field is required."],
+        "price": ["Must be a number."],
+        "hax": ["Unknown field."],
+    }
+    assert Entry.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_entry_endpoint_validates_against_published_version_not_live_fields(
+    api_client, user, product_setup
+):
+    # The core design claim (Decision 42): an entry is judged by the schema
+    # snapshot of the version it is pinned to, never by the Fields as they are now.
+    organization, content_type, version = product_setup
+    # a new required Field - but no new version is published
+    Field.objects.create(
+        content_type=content_type, name="sku", data_type="string", required=True
+    )
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-list", args=[organization.id, content_type.id])
+
+    # no "sku", which the live Fields now require - v1's schema does not know it
+    response = api_client.post(
+        url, {"data": {"title": "Shirt", "price": 499}}, format="json"
+    )
+
+    assert response.status_code == 201
+    assert Entry.objects.get(id=response.data["id"]).content_type_version == version
+
+
+@pytest.mark.django_db
+def test_entry_endpoint_uses_the_new_schema_once_a_version_is_republished(
+    api_client, user, product_setup
+):
+    organization, content_type, _ = product_setup
+    Field.objects.create(
+        content_type=content_type, name="sku", data_type="string", required=True
+    )
+    version_two = create_content_type_version(content_type=content_type)
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-list", args=[organization.id, content_type.id])
+
+    # the payload that was fine under v1 now breaks v2's schema
+    response = api_client.post(
+        url, {"data": {"title": "Shirt", "price": 499}}, format="json"
+    )
+    assert response.status_code == 400
+    assert response.data["data"] == {"sku": ["This field is required."]}
+    assert Entry.objects.count() == 0
+
+    # a payload that satisfies v2 is accepted and pinned to v2, not v1
+    response = api_client.post(
+        url, {"data": {"title": "Shirt", "price": 499, "sku": "S-1"}}, format="json"
+    )
+    assert response.status_code == 201
+    assert Entry.objects.get(id=response.data["id"]).content_type_version == version_two
