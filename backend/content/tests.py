@@ -1,6 +1,7 @@
 import pytest
 from django.core.exceptions import ValidationError
 
+from content.services.entry_validation import validate_entry_data, NON_FIELD_ERRORS
 from content.services.schema_generation import generate_schema, TYPE_MAP
 from content.services.versioning import create_content_type_version
 from content.models import Field
@@ -96,3 +97,107 @@ def test_create_content_type_version_increments_version_number(content_type):
     second_version = create_content_type_version(content_type=content_type)
     # assert: second_version.version_number == first_version.version_number + 1
     assert second_version.version_number == first_version.version_number + 1
+
+
+# --- validate_entry_data (content/services/entry_validation.py) -------------
+# Pure function: (schema dict, payload) -> {field: [messages]}. No db mark
+# needed, these never touch the database.
+
+# what generate_schema() produces for a Product with these four Fields
+PRODUCT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "price": {"type": "number"},
+        "in_stock": {"type": "boolean"},
+        "released": {"type": "string", "format": "date"},
+    },
+    "required": ["title", "price"],
+    "additionalProperties": False,
+}
+
+
+def test_validate_entry_data_accepts_a_fully_valid_payload():
+    data = {"title": "Shirt", "price": 499, "in_stock": True, "released": "2026-09-20"}
+    assert validate_entry_data(PRODUCT_SCHEMA, data) == {}
+
+
+def test_validate_entry_data_accepts_payload_with_only_required_fields():
+    assert validate_entry_data(PRODUCT_SCHEMA, {"title": "Shirt", "price": 5}) == {}
+
+
+def test_validate_entry_data_reports_each_missing_required_field_once():
+    # both required fields missing: one message per field, not duplicated
+    assert validate_entry_data(PRODUCT_SCHEMA, {}) == {
+        "title": ["This field is required."],
+        "price": ["This field is required."],
+    }
+
+
+def test_validate_entry_data_rejects_wrong_type():
+    result = validate_entry_data(PRODUCT_SCHEMA, {"title": "Shirt", "price": "banana"})
+    assert result == {"price": ["Must be a number."]}
+
+
+def test_validate_entry_data_rejects_null_values():
+    # Decision 19: null is not allowed unless nullable fields are added later
+    result = validate_entry_data(PRODUCT_SCHEMA, {"title": None, "price": 5})
+    assert result == {"title": ["This field may not be null."]}
+
+
+def test_validate_entry_data_does_not_treat_boolean_as_number():
+    # in Python True is an int; JSON Schema must not accept it as a number
+    result = validate_entry_data(PRODUCT_SCHEMA, {"title": "Shirt", "price": True})
+    assert result == {"price": ["Must be a number."]}
+
+
+def test_validate_entry_data_rejects_unknown_fields():
+    data = {"title": "Shirt", "price": 5, "hax": True, "zzz": 1}
+    assert validate_entry_data(PRODUCT_SCHEMA, data) == {
+        "hax": ["Unknown field."],
+        "zzz": ["Unknown field."],
+    }
+
+
+@pytest.mark.parametrize("bad_date", ["not-a-date", "20260920", "2026-13-45", "2026-9-2"])
+def test_validate_entry_data_enforces_date_format(bad_date):
+    # without a FormatChecker the library would accept all of these
+    data = {"title": "Shirt", "price": 5, "released": bad_date}
+    assert validate_entry_data(PRODUCT_SCHEMA, data) == {
+        "released": ["Must be a valid date (YYYY-MM-DD)."]
+    }
+
+
+@pytest.mark.parametrize("bad_root", [[1, 2, 3], "hello", 5])
+def test_validate_entry_data_rejects_non_object_payload(bad_root):
+    # no field to attach the error to, so it goes under NON_FIELD_ERRORS
+    assert validate_entry_data(PRODUCT_SCHEMA, bad_root) == {
+        NON_FIELD_ERRORS: ["Must be a JSON object."]
+    }
+
+
+def test_validate_entry_data_reports_all_errors_at_once():
+    # a form needs every problem in one response, not one per submit
+    result = validate_entry_data(PRODUCT_SCHEMA, {"price": "x", "hax": 1})
+    assert result == {
+        "title": ["This field is required."],
+        "price": ["Must be a number."],
+        "hax": ["Unknown field."],
+    }
+
+
+def test_validate_entry_data_works_with_a_schema_from_generate_schema():
+    # guards the contract between the two services: whatever generate_schema
+    # emits must be something validate_entry_data understands. Unsaved Field
+    # instances are enough - generate_schema only reads attributes.
+    fields = [
+        Field(name="title", data_type="string", required=True),
+        Field(name="released", data_type="date", required=False),
+    ]
+    schema = generate_schema(fields)
+    assert validate_entry_data(schema, {"title": "Shirt", "released": "2026-09-20"}) == {}
+    assert validate_entry_data(schema, {"released": "nope", "extra": 1}) == {
+        "title": ["This field is required."],
+        "released": ["Must be a valid date (YYYY-MM-DD)."],
+        "extra": ["Unknown field."],
+    }
