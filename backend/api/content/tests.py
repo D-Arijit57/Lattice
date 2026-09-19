@@ -201,165 +201,284 @@ def test_retrieve_field_succeeds(api_client, user):
     assert response.data["name"] == field.name
 
 
+# --- Triage of the original "your turn" stubs (2026-09-20) -------------------
+# Rule: assert each behavior at the lowest layer that can prove it, and don't
+# re-check behavior that lives in shared code and is already tested. Of the 20
+# original stubs, 6 were DROPPED as redundant (reasons below, kept for future
+# reference so nobody re-adds them by accident) and 14 were written.
+#
+# Dropped:
+#   ContentType "unauthenticated -> 401" and "non-member -> 403"
+#       ContentTypeViewSet inherits both checks from OrganizationScopedViewSet,
+#       the same base class FieldViewSet uses. The Field tests at the top of
+#       this file already prove that base class. Repeating them per viewset
+#       tests the same code again.
+#   ContentTypeVersion "version number increments across requests"
+#       The counter logic is in create_content_type_version(), covered by
+#       test_create_content_type_version_increments_version_number in
+#       content/tests.py. Through HTTP it adds nothing new.
+#   ContentTypeVersion "retrieve"
+#       Shares get_queryset() with list, and the list test below covers that
+#       queryset's scoping and ordering.
+#   Entry "creation attaches to the latest version"
+#       test_entry_endpoint_uses_the_new_schema_once_a_version_is_republished
+#       (Entry endpoint section, below) already publishes v2 and asserts the
+#       new entry is pinned to v2 and not v1.
+#   accounts "anonymous user cannot create org"
+#       Same IsAuthenticated gate as the anonymous request already tested in
+#       api/auth/tests.py; see the note in api/accounts/tests.py.
+
+@pytest.fixture
+def member_org(user):
+    # An Organization that `user` belongs to (role_id=1 is the owner role).
+    organization = Organization.objects.create(name="Acme")
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    return organization
+
+
 # --- ContentType ---
-# Same auth/scoping shape as Field's tests above (ContentTypeViewSet is
-# OrganizationScopedViewSet, one level up - no content_type_id in these URLs).
+# ContentTypeViewSet is OrganizationScopedViewSet one level up: URLs take only
+# [organization_id]. Its list is NOT paginated (only Entry list is, Decision 74).
 
 @pytest.mark.django_db
-def test_unauthenticated_request_to_content_types_is_rejected(api_client):
-    # arrange: an Organization exists
-    # act: GET reverse("content-type-list", args=[organization.id]), no auth
-    # assert: response.status_code == 401
-    pytest.skip("your turn")
+def test_valid_content_type_creation_succeeds(api_client, user, member_org):
+    other_org = Organization.objects.create(name="Other")
+    api_client.force_authenticate(user=user)
+    url = reverse("content-type-list", args=[member_org.id])
 
+    # The body also tries to choose the organization. That must be ignored:
+    # organization is a HiddenField filled from the URL, never from the client
+    # (Decision 47) - otherwise a member could create content types inside
+    # someone else's organization.
+    response = api_client.post(
+        url,
+        {"name": "Event", "slug": "event", "organization": other_org.id},
+        format="json",
+    )
 
-@pytest.mark.django_db
-def test_non_member_cannot_access_content_types(api_client, user):
-    # arrange: an Organization exists, `user` is NOT a member of it
-    # act: force_authenticate(user=user); GET content-type-list
-    # assert: response.status_code == 403
-    pytest.skip("your turn")
-
-
-@pytest.mark.django_db
-def test_valid_content_type_creation_succeeds(api_client, user):
-    # arrange: Organization + OrganizationMembership for `user`
-    # act: POST {"name": "Event", "slug": "event"} to content-type-list
-    # assert: response.status_code == 201, ContentType.objects.filter(...).exists()
-    pytest.skip("your turn")
+    assert response.status_code == 201
+    assert response.data["organization_id"] == member_org.id
+    assert ContentType.objects.filter(organization=member_org, slug="event").exists()
+    assert not ContentType.objects.filter(organization=other_org).exists()
 
 
 @pytest.mark.django_db
-def test_duplicate_slug_in_same_org_is_rejected(api_client, user):
-    # arrange: a ContentType with slug="event" already exists in the org;
-    #          membership for `user`
-    # act: POST another ContentType with the same slug in the same org
-    # assert: response.status_code == 400 (UniqueTogetherValidator on
-    #         organization+slug)
-    pytest.skip("your turn")
+def test_duplicate_slug_in_same_org_is_rejected(api_client, user, member_org):
+    ContentType.objects.create(organization=member_org, name="Event", slug="event")
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post(
+        reverse("content-type-list", args=[member_org.id]),
+        {"name": "Another", "slug": "event"},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert ContentType.objects.filter(organization=member_org).count() == 1
+
+    # The unique rule is the PAIR (organization, slug), not slug alone
+    # (Decision 13): the same slug must still be allowed in a different org.
+    other_org = Organization.objects.create(name="Other")
+    OrganizationMembership.objects.create(user=user, organization=other_org, role_id=1)
+    response = api_client.post(
+        reverse("content-type-list", args=[other_org.id]),
+        {"name": "Event", "slug": "event"},
+        format="json",
+    )
+    assert response.status_code == 201
 
 
 @pytest.mark.django_db
-def test_list_only_returns_content_types_for_this_organization(api_client, user):
-    # arrange: two Organizations, each with its own ContentType; `user` is a
-    #          member of only one of them
-    # act: force_authenticate(user=user); GET content-type-list for the org
-    #      `user` belongs to
-    # assert: only that org's ContentType shows up in the response
-    pytest.skip("your turn")
+def test_list_only_returns_content_types_for_this_organization(api_client, user, member_org):
+    other_org = Organization.objects.create(name="Other")  # `user` is NOT a member
+    ContentType.objects.create(organization=member_org, name="Mine", slug="mine")
+    ContentType.objects.create(organization=other_org, name="Theirs", slug="theirs")
+    api_client.force_authenticate(user=user)
+
+    response = api_client.get(reverse("content-type-list", args=[member_org.id]))
+
+    assert response.status_code == 200
+    # unpaginated, so response.data is a bare list
+    assert [item["name"] for item in response.data] == ["Mine"]
 
 
 @pytest.mark.django_db
-def test_retrieve_content_type_succeeds(api_client, user):
-    # arrange: Organization + membership + ContentType
-    # act: GET reverse("content-type-detail", args=[organization.id, content_type.id])
-    # assert: response.status_code == 200, response.data["name"] matches
-    pytest.skip("your turn")
+def test_retrieve_content_type_succeeds(api_client, user, member_org):
+    mine = ContentType.objects.create(organization=member_org, name="Mine", slug="mine")
+    other_org = Organization.objects.create(name="Other")
+    theirs = ContentType.objects.create(organization=other_org, name="Theirs", slug="theirs")
+    api_client.force_authenticate(user=user)
+
+    response = api_client.get(reverse("content-type-detail", args=[member_org.id, mine.id]))
+    assert response.status_code == 200
+    assert response.data["name"] == "Mine"
+
+    # Another org's content type asked for under MY org's URL: 404, exactly as
+    # if it didn't exist, so which ids are real in other orgs is not leaked.
+    response = api_client.get(reverse("content-type-detail", args=[member_org.id, theirs.id]))
+    assert response.status_code == 404
 
 
 # --- ContentTypeVersion ---
-# URLs take [organization_id, content_type_id] (+ pk for detail), same as
-# Field's. Reminder: schema is now server-generated (Decisions 94-96) - POST
-# no longer needs a "schema" key in the body at all.
+# URLs take [organization_id, content_type_id]. schema is server-generated and
+# read-only (Decisions 94-96): POST needs no "schema" key, and one sent is ignored.
 
 @pytest.mark.django_db
-def test_version_creation_without_fields_is_rejected(api_client, user):
-    # arrange: Organization + membership + ContentType with NO Fields
-    # act: POST reverse("content-type-version-list", args=[org.id, ct.id]), {}
-    # assert: response.status_code == 400 - create_content_type_version()
-    #         raises ValidationError for zero Fields (Decision 95)
-    pytest.skip("your turn")
+def test_version_creation_without_fields_is_rejected(api_client, user, member_org):
+    # a ContentType with NO Fields
+    content_type = ContentType.objects.create(organization=member_org, name="Event", slug="event")
+    api_client.force_authenticate(user=user)
 
+    response = api_client.post(
+        reverse("content-type-version-list", args=[member_org.id, content_type.id]),
+        {},
+        format="json",
+    )
 
-@pytest.mark.django_db
-def test_version_creation_generates_schema_from_fields(api_client, user):
-    # arrange: Organization + membership + ContentType with a couple of
-    #          Fields (mix of data_type/required)
-    # act: POST to content-type-version-list
-    # assert: response.status_code == 201, response.data["schema"]["properties"]
-    #         has one entry per Field, response.data["schema"]["required"]
-    #         matches which Fields have required=True
-    pytest.skip("your turn")
-
-
-@pytest.mark.django_db
-def test_version_number_increments_across_requests(api_client, user):
-    # arrange: same setup as above, POST once already to create v1
-    # act: POST again to create a second version
-    # assert: second response.data["version_number"] == first + 1
-    pytest.skip("your turn")
+    # The service raises Django's ValidationError for zero Fields (Decision 95);
+    # this proves the serializer translates it into a 400 instead of a 500.
+    assert response.status_code == 400
+    # 400 alone is not enough: a different bug can also produce a 400 (a
+    # UniqueTogetherValidator on the read-only version_number rejected EVERY
+    # version POST with {"version_number": ["This field is required."]}, which
+    # made this test pass for the wrong reason). Pin the actual reason.
+    assert "no Fields defined" in str(response.data)
+    assert ContentTypeVersion.objects.count() == 0
 
 
 @pytest.mark.django_db
-def test_list_returns_versions_for_this_content_type_only(api_client, user):
-    # arrange: two ContentTypes under the same org, each with Fields and its
-    #          own version created
-    # act: GET content-type-version-list for content_type_a
-    # assert: only content_type_a's version(s) appear, newest first
-    #         (get_queryset() orders by "-version_number")
-    pytest.skip("your turn")
+def test_version_creation_generates_schema_from_fields(api_client, user, member_org):
+    content_type = ContentType.objects.create(organization=member_org, name="Event", slug="event")
+    Field.objects.create(content_type=content_type, name="title", data_type="string", required=True)
+    Field.objects.create(content_type=content_type, name="price", data_type="number", required=False)
+    api_client.force_authenticate(user=user)
+
+    # The client tries to supply its own schema. It must be ignored: Fields are
+    # the only source of truth (Decision 20/94).
+    response = api_client.post(
+        reverse("content-type-version-list", args=[member_org.id, content_type.id]),
+        {"schema": {"type": "string"}},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert response.data["version_number"] == 1
+    schema = response.data["schema"]
+    assert set(schema["properties"]) == {"title", "price"}
+    assert schema["required"] == ["title"]  # price is required=False
+    assert schema["additionalProperties"] is False
 
 
 @pytest.mark.django_db
-def test_retrieve_version_succeeds(api_client, user):
-    # arrange: a version exists (create via create_content_type_version or a
-    #          real POST)
-    # act: GET content-type-version-detail
-    # assert: response.status_code == 200, response.data["version_number"] matches
-    pytest.skip("your turn")
+def test_list_returns_versions_for_this_content_type_only(api_client, user, member_org):
+    type_a = ContentType.objects.create(organization=member_org, name="A", slug="a")
+    type_b = ContentType.objects.create(organization=member_org, name="B", slug="b")
+    Field.objects.create(content_type=type_a, name="title", data_type="string", required=True)
+    Field.objects.create(content_type=type_b, name="title", data_type="string", required=True)
+    create_content_type_version(content_type=type_a)  # A v1
+    create_content_type_version(content_type=type_a)  # A v2
+    create_content_type_version(content_type=type_b)  # B v1
+    api_client.force_authenticate(user=user)
+
+    response = api_client.get(
+        reverse("content-type-version-list", args=[member_org.id, type_a.id])
+    )
+
+    assert response.status_code == 200
+    # newest first (get_queryset orders by -version_number), only A's versions
+    assert [v["version_number"] for v in response.data] == [2, 1]
+    assert all(v["content_type_id"] == type_a.id for v in response.data)
 
 
 # --- Entry ---
-# URLs take [organization_id, content_type_id] (+ pk for detail). Entry list
-# is cursor-paginated (EntryCursorPagination, page_size=50) - list responses
-# look like {"next", "previous", "results"}, not a bare list.
+# URLs take [organization_id, content_type_id] (+ pk for detail). Entry list is
+# cursor-paginated (EntryCursorPagination, page_size=50): {"next", "previous",
+# "results"}, not a bare list. These reuse product_setup (fixture defined in the
+# "Entry endpoint" section below): an org `user` belongs to, a "Product" type
+# with title/price Fields and one published version.
 
-@pytest.mark.django_db
-def test_entry_creation_attaches_to_latest_version(api_client, user):
-    # arrange: a ContentType with Fields and TWO versions created one after
-    #          another (v1, then add/change a Field and create v2)
-    # act: POST an Entry
-    # assert: the created Entry's content_type_version == the v2 row, not v1 -
-    #         EntryViewSet.get_serializer_context() always resolves the
-    #         *latest* version on create (Decision 66)
-    pytest.skip("your turn")
-
-
-@pytest.mark.django_db
-def test_entry_creation_fails_when_no_version_exists(api_client, user):
-    # arrange: a ContentType with Fields but NO ContentTypeVersion ever
-    #          published (version-creation deliberately skipped in this test)
-    # act: POST an Entry
-    # assert: response.status_code == 404 - get_serializer_context() raises
-    #         NotFound when latest_version is None
-    pytest.skip("your turn")
+def make_entry_in_another_content_type(organization):
+    # An Entry that belongs to a DIFFERENT ContentType in the same organization.
+    other_type = ContentType.objects.create(organization=organization, name="Event", slug="event")
+    Field.objects.create(content_type=other_type, name="title", data_type="string", required=True)
+    other_version = create_content_type_version(content_type=other_type)
+    return Entry.objects.create(content_type_version=other_version, data={"title": "Concert"})
 
 
 @pytest.mark.django_db
-def test_list_only_returns_entries_for_this_content_type(api_client, user):
-    # arrange: two ContentTypes (each with a version), each with its own Entry
-    # act: GET entry-list for content_type_a
-    # assert: response.data["results"] contains only content_type_a's Entry
-    pytest.skip("your turn")
+def test_entry_creation_fails_when_no_version_exists(api_client, user, member_org):
+    # Fields exist, but no version was ever published
+    content_type = ContentType.objects.create(organization=member_org, name="Event", slug="event")
+    Field.objects.create(content_type=content_type, name="title", data_type="string", required=True)
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post(
+        reverse("entry-list", args=[member_org.id, content_type.id]),
+        {"data": {"title": "Concert"}},
+        format="json",
+    )
+
+    # get_serializer_context() raises NotFound when there is no latest version
+    assert response.status_code == 404
+    assert Entry.objects.count() == 0
 
 
 @pytest.mark.django_db
-def test_retrieve_entry_succeeds(api_client, user):
-    # arrange: an Entry exists (ContentType + version + entry)
-    # act: GET entry-detail
-    # assert: response.status_code == 200
-    pytest.skip("your turn")
+def test_list_only_returns_entries_for_this_content_type(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    mine = Entry.objects.create(content_type_version=version, data={"title": "Shirt", "price": 1})
+    make_entry_in_another_content_type(organization)
+    api_client.force_authenticate(user=user)
+
+    response = api_client.get(reverse("entry-list", args=[organization.id, content_type.id]))
+
+    assert response.status_code == 200
+    # paginated: the entries sit under "results"
+    assert [entry["id"] for entry in response.data["results"]] == [mine.id]
 
 
 @pytest.mark.django_db
-def test_entry_list_is_paginated(api_client, user):
-    # arrange: create more than 50 Entries under one ContentType/version
-    #          (EntryCursorPagination.page_size == 50)
-    # act: GET entry-list
-    # assert: response.data has "next"/"previous"/"results" keys (not a bare
-    #         list like Field's unpaginated list), len(results) == 50, and
-    #         response.data["next"] is not None
-    pytest.skip("your turn")
+def test_retrieve_entry_succeeds(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    entry = Entry.objects.create(content_type_version=version, data={"title": "Shirt", "price": 1})
+    other_entry = make_entry_in_another_content_type(organization)
+    api_client.force_authenticate(user=user)
+
+    response = api_client.get(
+        reverse("entry-detail", args=[organization.id, content_type.id, entry.id])
+    )
+    assert response.status_code == 200
+    assert response.data["data"] == {"title": "Shirt", "price": 1}
+    assert response.data["version_number"] == version.version_number
+
+    # An entry of a different content type, asked for under THIS content type's
+    # URL: 404 (get_queryset filters by the URL's content type).
+    response = api_client.get(
+        reverse("entry-detail", args=[organization.id, content_type.id, other_entry.id])
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_entry_list_is_paginated(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    # page_size is 50, so 51 entries force a second page
+    for i in range(51):
+        Entry.objects.create(content_type_version=version, data={"title": f"Item {i}", "price": i})
+    api_client.force_authenticate(user=user)
+
+    response = api_client.get(reverse("entry-list", args=[organization.id, content_type.id]))
+
+    assert response.status_code == 200
+    # cursor pagination: no "count" key (it never counts the table), not a bare list
+    assert set(response.data) == {"next", "previous", "results"}
+    assert len(response.data["results"]) == 50
+    assert response.data["next"] is not None
+
+    # follow the cursor: exactly one entry is left, and nothing after it
+    second_page = api_client.get(response.data["next"])
+    assert second_page.status_code == 200
+    assert len(second_page.data["results"]) == 1
+    assert second_page.data["next"] is None
 
 
 # --- EntrySerializer schema validation ---------------------------------------
