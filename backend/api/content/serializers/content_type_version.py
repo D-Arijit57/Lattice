@@ -1,6 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
-from rest_framework.validators import UniqueTogetherValidator
 from content.models import ContentTypeVersion
 from content.services.versioning import create_content_type_version
 
@@ -33,13 +32,15 @@ class ContentTypeVersionSerializer(serializers.ModelSerializer):
             "created_at"
         ]
         read_only_fields = ["id", "created_at", "schema"]
-        validators = [
-            UniqueTogetherValidator(
-                queryset=ContentTypeVersion.objects.all(),
-                fields=["content_type", "version_number"],
-            )
-        ]
-        
+        # No UniqueTogetherValidator on (content_type, version_number) here, on
+        # purpose. DRF forces every field a UniqueTogetherValidator covers to be
+        # "required" in the request, but version_number is read-only and computed
+        # by the server, so the validator rejected every POST with
+        # {"version_number": ["This field is required."]}. It could never catch
+        # a real duplicate either: the number is assigned under a row lock
+        # (Decision 61) and the unique_content_type_version DB constraint is
+        # the actual guard.
+
     # this doesn't execute during serializer.is_valid()
     # using the content_versioning service
     def create(self, validated_data):
