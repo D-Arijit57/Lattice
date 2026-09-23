@@ -4,3 +4,4 @@ psycopg2-binary==2.9.12
 djangorestframework-simplejwt==5.5.1
 django-cors-headers==4.9.0
 jsonschema>=4.26,<5
+django-environs==5.2.17
