@@ -12,21 +12,39 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from datetime import timedelta
 from pathlib import Path
-
+import environ
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# The accessor used below (env('KEY'), env.bool('KEY'), env.db(), ...) to read
+# config from the environment instead of hardcoding it in this file.
+env = environ.Env()
+# Loads BASE_DIR/.env into the real process environment (os.environ) if that
+# file exists - true only in local dev, since .env is gitignored and never
+# deployed. In production there's no .env file; Azure sets the same variable
+# names directly as environment variables, so every env(...) call below reads
+# from the same place (os.environ) either way - this line just seeds it
+# locally before anything else runs.
+env.read_env(BASE_DIR / '.env')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-x_kn&@9&+p0+@f5i4tjy2_p#t81&#+p(614j%il@_%jt!z8qlh'
+# No default - a missing SECRET_KEY should crash startup loudly, not fall
+# back to an insecure value the way the old hardcoded string did.
+SECRET_KEY = env('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Defaults to False (not True) so a missing env var fails safe into
+# production mode instead of accidentally exposing debug info.
+DEBUG = env.bool('DEBUG', default=False)
 
-ALLOWED_HOSTS = []
+# The hostnames this Django instance will answer for. Defaults to an empty
+# list (Django's own default) rather than a permissive one - an empty prod
+# value should reject every request with a 400, not silently allow any Host
+# header through.
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 
 
 # Application definition
@@ -59,10 +77,11 @@ MIDDLEWARE = [
 ]
 
 
-CORS_ALLOWED_ORIGINS =[
-    "http://localhost:3000",
-    "http://localhost:3001"
-]
+# Dev-only in the single-origin production layout (Decision 108) - nginx and
+# gunicorn share one origin there, so no cross-origin request exists to
+# allow. This only matters for the dev setup, where the Vite server and
+# Django run on different ports.
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[])
 
 # Required whenever the frontend sends fetch(..., { credentials: 'include' }).
 # Cannot be combined with CORS_ALLOW_ALL_ORIGINS=True - the CORS spec
@@ -93,17 +112,14 @@ WSGI_APPLICATION = 'content_engine.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# env.db() parses a single DATABASE_URL string
+# (postgres://user:pass@host:port/name) into this dict's ENGINE/NAME/USER/
+# PASSWORD/HOST/PORT shape, inferring the postgresql backend from the
+# "postgres://" scheme. Matches the single connection-string format managed
+# Postgres providers (including Azure's) hand you.
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'content_engine',
-        'USER': 'arijitdas',
-        'PASSWORD': '',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    'default': env.db('DATABASE_URL'),
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

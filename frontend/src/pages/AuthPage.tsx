@@ -63,14 +63,9 @@ function BrandPanel() {
         backgroundSize: "22px 22px",
       }}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-logo text-4xl text-neutral-900 leading-none">Loom</h1>
-          <p className="text-xs font-mono text-neutral-500 mt-2">Composable Data Engine</p>
-        </div>
-        <p className="hidden xl:block text-xs font-mono text-neutral-400 tracking-wider mt-1 text-right shrink-0">
-          DEFINE / STRUCTURE / VALIDATE / INTEGRATE
-        </p>
+      <div>
+        <h1 className="font-logo text-4xl text-neutral-900 leading-none">Loom</h1>
+        <p className="text-xs font-mono text-neutral-500 mt-2">Composable Data Engine</p>
       </div>
 
       <div className="mt-10 xl:mt-12">
@@ -145,14 +140,8 @@ function BrandPanel() {
         </div>
       </div>
 
-      <div className="mt-auto pt-10 flex items-end justify-between">
-        <div>
-          <div className="w-6 h-0.5 bg-neutral-300 mb-2" />
-          <p className="text-sm font-mono text-neutral-500">A flexible foundation for your data.</p>
-        </div>
-        <p className="hidden xl:block text-xs font-mono text-neutral-400 tracking-wider text-right shrink-0">
-          BUILT FOR<br />DEVELOPERS
-        </p>
+      <div className="mt-auto pt-10">
+        <div className="w-6 h-0.5 bg-neutral-300 mb-2" />
       </div>
     </div>
   )
