@@ -39,7 +39,6 @@ SECRET_KEY = env('SECRET_KEY')
 # Defaults to False (not True) so a missing env var fails safe into
 # production mode instead of accidentally exposing debug info.
 DEBUG = env.bool('DEBUG', default=False)
-
 # The hostnames this Django instance will answer for. Defaults to an empty
 # list (Django's own default) rather than a permissive one - an empty prod
 # value should reject every request with a 400, not silently allow any Host
@@ -181,3 +180,26 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
+
+
+# HTTPS / proxy settings (Decision 109). In prod, Azure's ingress terminates
+# TLS and stamps X-Forwarded-Proto: https before the request reaches nginx;
+# nginx must pass that header through unchanged. This tells Django which
+# header to trust and what value means "the original request was HTTPS" -
+# Django sees incoming headers with HTTP_ prefixed + dashes -> underscores.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Force plain HTTP visitors to HTTPS. Off in dev (no HTTPS/nginx locally).
+SECURE_SSL_REDIRECT = not DEBUG
+
+# Django's own session/CSRF cookies (separate from the access_token/
+# refresh_token cookies in api/auth/views.py) - only send over HTTPS in prod.
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+
+# Tells the browser to always use HTTPS for this host, cached client-side for
+# this many seconds - can't be undone once a browser has it, so start small
+# (a few hours) and raise it later once the prod setup is confirmed working.
+# 0 in dev = the instruction is off entirely.
+SECURE_HSTS_SECONDS = 0 if DEBUG else 3600
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
