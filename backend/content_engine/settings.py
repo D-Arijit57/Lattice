@@ -166,10 +166,48 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # checks the signature against SECRET_KEY, and if it's valid + not expired,
 # loads the User named in the token's payload - no database lookup for the
 # token itself (Decision 79/81).
+#
+# Throttling (rate limiting): DRF counts requests per caller and answers 429
+# once a caller passes the limit. This must stay in the SAME dict as the
+# authentication setting - a second REST_FRAMEWORK = {...} further down would
+# silently replace this one.
+#   anon / user  - loose defaults for every view: not-logged-in callers are
+#                  counted per IP address, logged-in callers per user id.
+#   login / signup / refresh - strict limits for the endpoints reachable
+#                  without logging in (password guessing, signup spam). Each of
+#                  those views opts in with throttle_scope = "<name>".
+# NUM_PROXIES: how many proxies sit between the internet and Django. DRF needs
+# it to read the real client IP out of X-Forwarded-For; without it every user
+# behind Azure/nginx looks like the same address and shares one limit. Left
+# at 0 locally (use REMOTE_ADDR as is); set it in production once the proxy
+# chain is known - too low lets clients fake their IP, too high blames the
+# wrong address.
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'api.auth.authentication.CookieJWTAuthentication',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '30/min',
+        'user': '100/min',
+        'login': '5/min',
+        'signup': '5/min',
+        'refresh': '30/min',
+    },
+    'NUM_PROXIES': env.int('NUM_PROXIES', default=0),
+}
+
+# Where throttle counters are kept. Explicit so the limitation is visible:
+# local memory is per process, so with several Gunicorn workers each worker
+# counts on its own and the real limit is roughly (limit x workers). Known
+# V1 gap (gap.md #3); a shared cache (Redis) or an nginx limit closes it.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    },
 }
 
 # Token lifetimes. Short-lived access token limits how long a leaked token
@@ -179,6 +217,39 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+}
+
+
+# Logging. Everything goes to stdout, not a file: in a container the platform
+# (Azure) collects stdout itself, and a file inside the container disappears
+# with it. LOG_LEVEL is an env var so prod can be raised/lowered without a
+# code change; INFO keeps app events + warnings/errors and drops DEBUG noise.
+# Django's own "django.request" logger already writes 5xx (with traceback)
+# and 4xx lines through this same root handler, so unhandled errors need no
+# extra code. Never log passwords, tokens, cookies or entry data.
+LOG_LEVEL = env('LOG_LEVEL', default='INFO')
+
+LOGGING = {
+    'version': 1,
+    # Keep Django's/DRF's own loggers alive - False would silence them.
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stdout',
+            'formatter': 'standard',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': LOG_LEVEL,
+    },
 }
 
 

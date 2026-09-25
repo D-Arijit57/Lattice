@@ -3,10 +3,19 @@ conftest.py at the project root: pytest auto-discovers this file and makes
 every fixture defined here available to all test modules, with no import.
 """
 import pytest
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from accounts.models import Organization, User
 from content.models import ContentType
+
+
+@pytest.fixture(autouse=True)
+def clear_throttle_counters():
+    # Throttle counts live in the cache, which survives between tests in one
+    # run. Without this, requests made by earlier tests would count against
+    # the login/signup limits and later tests would fail with 429 at random.
+    cache.clear()
 
 
 @pytest.fixture
