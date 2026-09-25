@@ -182,3 +182,35 @@ def test_health_check_is_never_throttled(api_client):
     # Azure polls this constantly from one address.
     for _ in range(40):
         assert api_client.get("/api/monitoring/health/").status_code == 200
+
+
+# ---- logout / signup must work with a bad or expired access cookie ---------
+# DRF authenticates any request that touches request.user, so a leftover
+# expired cookie used to answer 401 before these views ran (API-Contract.md,
+# Surprise 1). Both views set authentication_classes = [] so they never look
+# at the cookie at all.
+
+LOGOUT_URL = reverse("logout")
+
+
+@pytest.mark.django_db
+def test_logout_works_even_with_an_expired_or_garbage_access_cookie(api_client):
+    api_client.cookies["access_token"] = "not-a-real-token"
+    response = api_client.post(LOGOUT_URL)
+    # 401 here would mean the cookies were never cleared and the user stays
+    # stuck "logged in" on the client.
+    assert response.status_code == 204
+    # delete_cookie() answers with an already-expired cookie (max-age 0)
+    assert response.cookies["access_token"]["max-age"] == 0
+    assert response.cookies["refresh_token"]["max-age"] == 0
+
+
+@pytest.mark.django_db
+def test_signup_works_even_with_an_expired_or_garbage_access_cookie(api_client):
+    api_client.cookies["access_token"] = "not-a-real-token"
+    response = api_client.post(
+        SIGNUPURL,
+        {"name": "Lin", "email": "lin@example.com", "password": "pw123456"},
+        format="json",
+    )
+    assert response.status_code == 201

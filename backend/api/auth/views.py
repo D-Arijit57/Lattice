@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 class SignupView(APIView):
+    # No authentication at all: an expired leftover access cookie must not
+    # turn signup into a 401 (API-Contract.md, Surprise 1).
+    authentication_classes = []
     # AllowAny: signup has to be reachable by someone who isn't
     # authenticated yet - that's the whole point of the endpoint.
     permission_classes = [AllowAny]
@@ -141,6 +144,10 @@ class CookieTokenRefreshView(TokenRefreshView):
 
 
 class LogoutView(APIView):
+    # Same reason: logout must still clear the cookies when the access
+    # token has already expired, otherwise the user stays stuck logged in.
+    authentication_classes = []
+
     def post(self, request):
         # delete_cookie() only works if the Path matches how the cookie was
         # set - the refresh_token cookie was scoped to
