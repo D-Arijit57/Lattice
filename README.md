@@ -1,4 +1,4 @@
-# Loom - A Composable Data Engine
+# Lattice - A Composable Data Engine
 
 - `backend/` — Django + DRF API (see `backend/manage.py`)
 - `frontend/` — Vite + React control plane for the API (see `frontend/README.md`)
