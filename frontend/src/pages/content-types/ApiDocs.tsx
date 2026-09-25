@@ -1,96 +1,141 @@
-import { useOutletContext } from "react-router-dom"
-import { ArrowRight, Copy } from "lucide-react"
+import type { ReactNode } from "react"
+import { Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ContentType } from "@/types"
+import { useOrgId } from "@/lib/use-org"
+import { useContentType } from "./ContentTypeWorkspace"
+
+// The API is reached through the same origin as this app. VITE_API_BASE_URL
+// may be relative ("/api") or absolute, so resolve it against the page's own
+// address to show something a person can actually paste into a terminal.
+const API_BASE = new URL(import.meta.env.VITE_API_BASE_URL, window.location.origin).href.replace(/\/$/, "")
 
 export function ApiDocs() {
-  const { contentType } = useOutletContext<{ contentType: ContentType }>()
+  const contentType = useContentType()
+  const orgId = useOrgId()
+
+  const entriesPath = `/organizations/${orgId}/content-types/${contentType.id}/entries/`
+  const listCurl = `curl -X GET \\
+  '${API_BASE}${entriesPath}' \\
+  -b cookies.txt`
+  const createCurl = `curl -X POST \\
+  '${API_BASE}${entriesPath}' \\
+  -b cookies.txt \\
+  -H 'Content-Type: application/json' \\
+  -d '{"data": {"title": "Hello"}}'`
+  const loginCurl = `curl -X POST '${API_BASE}/auth/login/' \\
+  -c cookies.txt \\
+  -H 'Content-Type: application/json' \\
+  -d '{"email": "you@example.com", "password": "..."}'`
 
   return (
-    <div className="flex flex-col md:flex-row gap-8">
-      <div className="w-full md:w-56 shrink-0">
-        <nav className="flex flex-col space-y-1 font-medium text-sm text-neutral-600">
-          <a href="#overview" className="px-3 py-2 bg-blue-50 text-blue-700 rounded-md">Overview</a>
-          <a href="#auth" className="px-3 py-2 hover:bg-neutral-50 rounded-md">Authentication</a>
-          <a href="#endpoints" className="px-3 py-2 hover:bg-neutral-50 rounded-md">Endpoints</a>
-          <div className="pt-2 pb-1 pl-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Entries</div>
-          <a href="#list" className="px-3 py-2 hover:bg-neutral-50 rounded-md pl-6 flex items-center before:content-[''] before:w-1 before:h-1 before:bg-blue-600 before:rounded-full before:absolute relative before:left-3">List entries</a>
-          <a href="#get" className="px-3 py-2 hover:bg-neutral-50 rounded-md pl-6">Get entry</a>
-          <a href="#create" className="px-3 py-2 hover:bg-neutral-50 rounded-md pl-6">Create entry</a>
-          <a href="#update" className="px-3 py-2 hover:bg-neutral-50 rounded-md pl-6">Update entry</a>
-          <a href="#delete" className="px-3 py-2 hover:bg-neutral-50 rounded-md pl-6">Delete entry</a>
-        </nav>
+    <div className="max-w-4xl space-y-12">
+      <div>
+        <h3 className="text-2xl font-bold tracking-tight text-neutral-900 mb-2">API</h3>
+        <p className="font-mono text-sm text-neutral-500">Base URL: {API_BASE}</p>
+        <p className="text-neutral-600 mt-4">
+          Requests are authenticated with the session cookies set at login (there are no API keys).
+          Sign in once, keep the cookies, and send them with every call.
+        </p>
       </div>
 
-      <div className="flex-1 max-w-4xl space-y-12">
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-2xl font-bold tracking-tight text-neutral-900">API</h3>
-            <Button variant="outline">View in API docs <ArrowRight className="w-4 h-4 ml-2" /></Button>
-          </div>
-          <p className="font-mono text-sm text-neutral-500 mb-8">Base URL: /api/v1</p>
+      <Endpoint
+        title="Sign in"
+        method="POST"
+        path="/auth/login/"
+        description="Sets the access and refresh cookies. Save them with -c and send them back with -b."
+        code={loginCurl}
+      />
+
+      <Endpoint
+        title="List entries"
+        method="GET"
+        path={entriesPath}
+        description="Newest first, 50 per page across all versions. The response has next and previous; next ends in ?cursor=... - pass that cursor to get the following page."
+        code={listCurl}
+      >
+        <h5 className="font-semibold text-neutral-900 mb-4">Query parameters</h5>
+        <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-neutral-50/50 border-b border-neutral-100 text-neutral-500 font-medium">
+              <tr>
+                <th className="px-6 py-3">Parameter</th>
+                <th className="px-6 py-3">Type</th>
+                <th className="px-6 py-3">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="px-6 py-4 font-mono font-medium text-neutral-900">cursor</td>
+                <td className="px-6 py-4 font-mono text-neutral-500">string</td>
+                <td className="px-6 py-4 text-neutral-600">Opaque position from the previous response's next link.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+      </Endpoint>
 
-        <section id="list">
-          <div className="flex items-center gap-3 mb-2">
-            <h4 className="text-lg font-bold text-neutral-900">List entries</h4>
-            <Badge variant="success" className="bg-green-100 text-green-700 font-mono">GET</Badge>
-            <Badge variant="secondary" className="font-mono bg-neutral-100 text-neutral-600 border-none">/api/v1/content-types/{contentType.slug}/entries/</Badge>
-          </div>
-          <p className="text-neutral-600 mb-6">Retrieve a list of entries for this content type.</p>
+      <Endpoint
+        title="Create entry"
+        method="POST"
+        path={entriesPath}
+        description="The entry is validated against the newest published version. Errors come back per field, all at once."
+        code={createCurl}
+      />
 
-          <div className="border-b border-neutral-200 mb-6">
-            <nav className="flex space-x-6">
-              <button className="pb-3 text-sm font-medium border-b-2 border-blue-600 text-neutral-900">Request</button>
-              <button className="pb-3 text-sm font-medium border-b-2 border-transparent text-neutral-500 hover:text-neutral-900 hover:border-neutral-300">Response</button>
-              <button className="pb-3 text-sm font-medium border-b-2 border-transparent text-neutral-500 hover:text-neutral-900 hover:border-neutral-300">Code example</button>
-            </nav>
-          </div>
-
-          <div className="bg-[#0D1117] rounded-xl overflow-hidden text-neutral-300 font-mono text-sm shadow-sm mb-8 relative group">
-            <Button variant="secondary" size="sm" className="absolute top-4 right-4 h-8 bg-white/10 text-white hover:bg-white/20 border-none opacity-0 group-hover:opacity-100 transition-opacity">
-              <Copy className="w-3 h-3 mr-2" /> Copy
-            </Button>
-            <pre className="p-6 overflow-x-auto leading-relaxed">
-              <code><span className="text-pink-400">curl</span> -X GET \
-  <span className="text-green-300">'https://api.yourapp.com/api/v1/content-types/{contentType.slug}/entries/'</span> \
-  -H <span className="text-green-300">'Authorization: Bearer &lt;API_KEY&gt;'</span> \
-  -H <span className="text-green-300">'Content-Type: application/json'</span></code>
-            </pre>
-          </div>
-
-          <h5 className="font-semibold text-neutral-900 mb-4">Query parameters</h5>
-          <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-neutral-50/50 border-b border-neutral-100 text-neutral-500 font-medium">
-                <tr>
-                  <th className="px-6 py-3">Parameter</th>
-                  <th className="px-6 py-3">Type</th>
-                  <th className="px-6 py-3">Description</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                <tr>
-                  <td className="px-6 py-4 font-mono font-medium text-neutral-900">limit</td>
-                  <td className="px-6 py-4 font-mono text-neutral-500">integer</td>
-                  <td className="px-6 py-4 text-neutral-600">Number of results (default: 50)</td>
-                </tr>
-                <tr>
-                  <td className="px-6 py-4 font-mono font-medium text-neutral-900">offset</td>
-                  <td className="px-6 py-4 font-mono text-neutral-500">integer</td>
-                  <td className="px-6 py-4 text-neutral-600">Pagination offset (default: 0)</td>
-                </tr>
-                <tr>
-                  <td className="px-6 py-4 font-mono font-medium text-neutral-900">sort</td>
-                  <td className="px-6 py-4 font-mono text-neutral-500">string</td>
-                  <td className="px-6 py-4 text-neutral-600">Field to sort by (e.g. -updatedAt)</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+      <Endpoint
+        title="Get entry"
+        method="GET"
+        path={`${entriesPath}{id}/`}
+        description="One entry by id."
+      />
     </div>
+  )
+}
+
+function Endpoint({
+  title,
+  method,
+  path,
+  description,
+  code,
+  children,
+}: {
+  title: string
+  method: "GET" | "POST"
+  path: string
+  description: string
+  code?: string
+  children?: ReactNode
+}) {
+  return (
+    <section>
+      <div className="flex flex-wrap items-center gap-3 mb-2">
+        <h4 className="text-lg font-bold text-neutral-900">{title}</h4>
+        <Badge variant="success" className="bg-green-100 text-green-700 font-mono">{method}</Badge>
+        <Badge variant="secondary" className="font-mono bg-neutral-100 text-neutral-600 border-none break-all">
+          {path}
+        </Badge>
+      </div>
+      <p className="text-neutral-600 mb-6">{description}</p>
+
+      {code && (
+        <div className="bg-[#0D1117] rounded-xl overflow-hidden text-neutral-300 font-mono text-sm shadow-sm mb-8 relative group">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="absolute top-4 right-4 h-8 bg-white/10 text-white hover:bg-white/20 border-none opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+            onClick={() => navigator.clipboard.writeText(code)}
+          >
+            <Copy className="w-3 h-3 mr-2" /> Copy
+          </Button>
+          <pre className="p-6 overflow-x-auto leading-relaxed">
+            <code>{code}</code>
+          </pre>
+        </div>
+      )}
+
+      {children}
+    </section>
   )
 }
