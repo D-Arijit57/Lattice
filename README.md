@@ -15,6 +15,15 @@ Validation errors are returned per field, all at once:
 { "data": { "price": ["Must be a number."], "sku": ["This field is required."] } }
 ```
 
+## Data model
+
+![Lattice data model](docs/data-model.png)
+
+- `users` and `organizations` are linked many-to-many through `organization_memberships`.
+- Each organization owns many `content_types`, and each content type owns many `fields`.
+- `content_type_versions` store the generated JSON Schema for a content type, numbered per content type.
+- `entries` keep their data as JSONB and reference a `content_type_version`, not the content type directly.
+
 ## Tech stack
 
 | Layer | Tools |
