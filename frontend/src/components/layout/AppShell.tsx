@@ -22,7 +22,7 @@ function Sidebar() {
   return (
     <div className="hidden md:flex h-screen w-64 flex-col border-r border-neutral-200 bg-white shrink-0">
       <div className="p-4 flex items-center justify-between">
-        <h1 className="font-logo text-2xl text-neutral-900 leading-none">Loom</h1>
+        <h1 className="font-logo text-2xl text-neutral-900 leading-none">Lattice</h1>
       </div>
       
       <div className="px-4 py-2">

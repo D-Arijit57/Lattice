@@ -64,7 +64,7 @@ function BrandPanel() {
       }}
     >
       <div>
-        <h1 className="font-logo text-4xl text-neutral-900 leading-none">Loom</h1>
+        <h1 className="font-logo text-4xl text-neutral-900 leading-none">Lattice</h1>
         <p className="text-xs font-mono text-neutral-500 mt-2">Composable Data Engine</p>
       </div>
 
@@ -263,7 +263,7 @@ export function AuthPage() {
             {mode === "signin" ? "Welcome back" : "Create your account"}
           </h2>
           <p className="text-neutral-500 mt-1 mb-8">
-            {mode === "signin" ? "Sign in to your Loom workspace" : "Start building with Loom"}
+            {mode === "signin" ? "Sign in to your Lattice workspace" : "Start building with Lattice"}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">

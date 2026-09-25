@@ -1,4 +1,4 @@
-# Loom API Contract (V1)
+# Lattice API Contract (V1)
 
 Verified **live on 2026-09-20** against the running Django dev server (a scratch copy of the database, so no real data was touched). Every status code and body shape below was observed in a real response unless it is listed under "Not probed live".
 
