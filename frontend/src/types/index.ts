@@ -1,60 +1,67 @@
-export type Workspace = {
-  id: string;
+// Shapes of the objects the Lattice API returns (see API-Contract.md).
+// Field names are snake_case on purpose: they are exactly what comes over
+// the wire, so no mapping layer sits between the API and the UI.
+
+export type Organization = {
+  id: number;
   name: string;
-  members: number;
-  plan: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ContentType = {
-  id: string;
+  id: number;
   name: string;
   slug: string;
-  description: string;
-  entriesCount: number;
-  currentVersion: string;
-  versionStatus: 'Current' | 'Archived' | 'Draft';
-  updatedAt: string;
+  organization_id: number;
+  created_at: string;
+  updated_at: string;
 };
 
-export type SchemaField = {
-  id: string;
+// The four data types the backend supports (content/services/schema_generation.py).
+export type FieldDataType = 'string' | 'number' | 'boolean' | 'date';
+
+export type Field = {
+  id: number;
+  content_type_id: number;
   name: string;
-  type: 'String' | 'Number' | 'Boolean' | 'Enum' | 'Object' | 'Array' | 'Date' | 'Reference';
+  data_type: FieldDataType;
   required: boolean;
-  unique: boolean;
-  description?: string;
-  validations?: {
-    min?: number;
-    max?: number;
-    integer?: boolean;
-    options?: string[];
-  };
 };
 
-export type SchemaVersion = {
-  id: string;
-  version: string;
-  status: 'Current' | 'Archived' | 'Draft';
-  createdAt: string;
-  createdBy: string;
-  fieldsCount: number;
-  summary: string;
-  changes: string[];
+// One property inside a version's JSON Schema, as generate_schema() writes it.
+export type SchemaProperty = {
+  type: 'string' | 'number' | 'boolean';
+  format?: 'date';
+};
+
+export type VersionSchema = {
+  type: 'object';
+  properties: Record<string, SchemaProperty>;
+  required: string[];
+  additionalProperties: boolean;
+};
+
+export type ContentTypeVersion = {
+  id: number;
+  content_type_id: number;
+  version_number: number;
+  schema: VersionSchema;
+  created_at: string;
 };
 
 export type Entry = {
-  id: string;
-  contentTypeId: string;
-  version: string;
-  status: 'Published' | 'Draft' | 'Archived';
-  updatedAt: string;
-  data: Record<string, any>;
+  id: number;
+  content_type_version_id: number;
+  version_number: number;
+  data: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 };
 
-export type ActivityLog = {
-  id: string;
-  action: string;
-  description: string;
-  timestamp: string;
-  icon: 'entry-created' | 'entry-updated' | 'schema-published' | 'api-key-regenerated' | 'content-type-created';
+// Entries are cursor-paginated: `next` is an absolute URL ending in ?cursor=...
+export type EntryPage = {
+  next: string | null;
+  previous: string | null;
+  results: Entry[];
 };

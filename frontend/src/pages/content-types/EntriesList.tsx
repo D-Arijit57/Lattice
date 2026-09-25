@@ -1,96 +1,147 @@
-import { useOutletContext, Link } from "react-router-dom"
-import { Plus, Search, Filter } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
+import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ContentType } from "@/types"
-import { mockEntries } from "@/lib/mock-data"
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
+import { cursorFrom, entries, errorMessage, versions } from "@/lib/api"
+import { displayValue } from "@/lib/entry-fields"
+import { useApi } from "@/lib/use-api"
+import { useOrgId, useOrgPath } from "@/lib/use-org"
+import { formatDateTime } from "@/lib/utils"
+import type { Entry } from "@/types"
+import { useContentType } from "./ContentTypeWorkspace"
+
+// How many of the schema's fields get their own column. Entries can have
+// more; the rest are on the entry's own page.
+const MAX_DATA_COLUMNS = 4
 
 export function EntriesList() {
-  const { contentType } = useOutletContext<{ contentType: ContentType }>()
+  const contentType = useContentType()
+  const orgId = useOrgId()
+  const orgPath = useOrgPath()
+  const basePath = orgPath(`/content-types/${contentType.slug}`)
+
+  const versionList = useApi(() => versions.list(orgId, contentType.id), [orgId, contentType.id])
+  const firstPage = useApi(() => entries.list(orgId, contentType.id), [orgId, contentType.id])
+
+  // The API pages entries with a cursor ("give me what comes after this
+  // one"), so the list grows by appending pages: page one comes from
+  // useApi, "Load more" fetches the next and adds it below.
+  const [moreRows, setMoreRows] = useState<Entry[]>([])
+  // undefined = "Load more" not used yet, so the cursor is the first page's `next`.
+  const [laterCursor, setLaterCursor] = useState<string | null | undefined>(undefined)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [moreError, setMoreError] = useState<string | null>(null)
+
+  // Switching to another content type starts the list over.
+  useEffect(() => {
+    setMoreRows([])
+    setLaterCursor(undefined)
+  }, [contentType.id])
+
+  const rows = [...(firstPage.data?.results ?? []), ...moreRows]
+  const cursor = laterCursor === undefined ? cursorFrom(firstPage.data?.next ?? null) : laterCursor
+
+  async function loadMore() {
+    setLoadingMore(true)
+    setMoreError(null)
+    try {
+      const page = await entries.list(orgId, contentType.id, cursor)
+      setMoreRows((current) => [...current, ...page.results])
+      setLaterCursor(cursorFrom(page.next))
+    } catch (err) {
+      setMoreError(errorMessage(err))
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  if (versionList.loading || firstPage.loading) return <LoadingState />
+  const failed = versionList.error ?? firstPage.error
+  if (failed) return <ErrorState error={failed} onRetry={() => { versionList.reload(); firstPage.reload() }} />
+
+  // Columns come from the newest version's fields, so each content type
+  // shows its own fields instead of one hardcoded set.
+  const latest = versionList.data?.[0]
+  const columns = latest ? Object.keys(latest.schema.properties).slice(0, MAX_DATA_COLUMNS) : []
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <h3 className="text-xl font-bold tracking-tight text-neutral-900">Entries</h3>
-          <Badge variant="secondary" className="font-mono bg-neutral-100">{contentType.entriesCount.toLocaleString()} entries</Badge>
+          <Badge variant="secondary" className="font-mono bg-neutral-100">
+            {rows.length}{cursor ? "+" : ""} {rows.length === 1 && !cursor ? "entry" : "entries"}
+          </Badge>
         </div>
-        <Button><Plus className="w-4 h-4 mr-2" /> New entry</Button>
+        {latest && (
+          <Button asChild>
+            <Link to={`${basePath}/entries/new`}><Plus className="w-4 h-4 mr-2" /> New entry</Link>
+          </Button>
+        )}
       </div>
 
-      <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-neutral-100 flex items-center justify-between gap-4 bg-neutral-50/50">
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-neutral-500" />
-            <Input type="text" placeholder="Search entries..." className="pl-9 bg-white" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" className="bg-white"><Filter className="w-4 h-4 mr-2" /> Filters</Button>
-            <Button variant="outline" className="bg-white">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
-              Sort
-            </Button>
-          </div>
+      {!latest ? (
+        <div className="bg-white border border-neutral-200 shadow-sm rounded-xl">
+          <EmptyState
+            title="No schema version published yet"
+            description="Entries are validated against a published version. Add fields, then publish one."
+            action={<Button asChild variant="outline"><Link to={`${basePath}/versions`}>Go to versions</Link></Button>}
+          />
         </div>
-        
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12 text-center">
-                <input type="checkbox" className="rounded border-neutral-300" />
-              </TableHead>
-              <TableHead>ID</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Price</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Updated</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {mockEntries.map((entry) => (
-              <TableRow key={entry.id}>
-                <TableCell className="text-center">
-                  <input type="checkbox" className="rounded border-neutral-300" />
-                </TableCell>
-                <TableCell className="font-mono text-sm text-neutral-500">{entry.id}</TableCell>
-                <TableCell className="font-medium text-neutral-900">
-                  <Link to={`/content-types/${contentType.slug}/entries/${entry.id}`} className="hover:underline hover:text-blue-600 focus:outline-none">
-                    {entry.data.name}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-neutral-600">{entry.data.category}</TableCell>
-                <TableCell className="font-mono">
-                  {entry.data.price ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(entry.data.price) : '-'}
-                </TableCell>
-                <TableCell>
-                  {entry.status === 'Published' ? (
-                    <Badge variant="success" className="bg-green-100 text-green-700 hover:bg-green-100">Published</Badge>
-                  ) : (
-                    <Badge variant="secondary">Draft</Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-neutral-500 text-sm">{entry.updatedAt}</TableCell>
+      ) : rows.length === 0 ? (
+        <div className="bg-white border border-neutral-200 shadow-sm rounded-xl">
+          <EmptyState
+            title="No entries yet"
+            description="Create the first one."
+            action={<Button asChild><Link to={`${basePath}/entries/new`}>New entry</Link></Button>}
+          />
+        </div>
+      ) : (
+        <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                {columns.map((name) => (
+                  <TableHead key={name} className="font-mono">{name}</TableHead>
+                ))}
+                <TableHead>Version</TableHead>
+                <TableHead>Created</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        
-        <div className="p-4 border-t border-neutral-100 flex items-center justify-between text-sm text-neutral-500 bg-neutral-50/50">
-          <div>1-5 of {contentType.entriesCount.toLocaleString()}</div>
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled>&lt;</Button>
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-blue-50 text-blue-700 border-blue-200">1</Button>
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-white">2</Button>
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-white">3</Button>
-            <span className="px-2">...</span>
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-white">50</Button>
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0 bg-white">&gt;</Button>
-          </div>
+            </TableHeader>
+            <TableBody>
+              {rows.map((entry) => (
+                <TableRow key={entry.id}>
+                  <TableCell className="font-mono text-sm">
+                    <Link to={`${basePath}/entries/${entry.id}`} className="text-blue-600 hover:underline">
+                      #{entry.id}
+                    </Link>
+                  </TableCell>
+                  {columns.map((name) => (
+                    <TableCell key={name} className="text-neutral-700 max-w-[14rem] truncate">
+                      {displayValue(entry.data[name])}
+                    </TableCell>
+                  ))}
+                  <TableCell className="font-mono text-sm text-neutral-500">v{entry.version_number}</TableCell>
+                  <TableCell className="text-neutral-500 text-sm">{formatDateTime(entry.created_at)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          {(cursor || moreError) && (
+            <div className="p-4 border-t border-neutral-100 flex items-center justify-center gap-4 bg-neutral-50/50">
+              {moreError && <span className="text-sm text-red-600">{moreError}</span>}
+              <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   )
 }

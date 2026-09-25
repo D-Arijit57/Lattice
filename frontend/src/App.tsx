@@ -9,6 +9,7 @@ import { AppShell } from "@/components/layout/AppShell"
 import { CommandPalette } from "@/components/layout/CommandPalette"
 import { RequireAuth } from "@/components/auth/RequireAuth"
 import { AuthPage } from "@/pages/AuthPage"
+import { HomeRedirect } from "@/pages/HomeRedirect"
 import { WorkspaceOverview } from "@/pages/WorkspaceOverview"
 import { ContentTypesList } from "@/pages/content-types/ContentTypesList"
 import { ContentTypeWorkspace } from "@/pages/content-types/ContentTypeWorkspace"
@@ -27,19 +28,23 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<AuthPage />} />
         <Route element={<RequireAuth />}>
-          <Route element={<AppShell />}>
-            <Route path="/" element={<WorkspaceOverview />} />
-            <Route path="/content-types" element={<ContentTypesList />} />
-            <Route path="/content-types/:slug" element={<ContentTypeWorkspace />}>
+          {/* "/" only decides which organization to open (or asks for a first one). */}
+          <Route path="/" element={<HomeRedirect />} />
+          {/* Everything else lives under an organization, like the API does. */}
+          <Route path="/orgs/:orgId" element={<AppShell />}>
+            <Route index element={<WorkspaceOverview />} />
+            <Route path="content-types" element={<ContentTypesList />} />
+            <Route path="content-types/:slug" element={<ContentTypeWorkspace />}>
               <Route index element={<ContentTypeOverview />} />
               <Route path="schema" element={<SchemaEditor />} />
               <Route path="versions" element={<SchemaVersions />} />
               <Route path="entries" element={<EntriesList />} />
               <Route path="api" element={<ApiDocs />} />
             </Route>
-            <Route path="/content-types/:slug/entries/:entryId" element={<EntryEditor />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="content-types/:slug/entries/new" element={<EntryEditor />} />
+            <Route path="content-types/:slug/entries/:entryId" element={<EntryEditor />} />
           </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
       <CommandPalette open={cmdOpen} setOpen={setCmdOpen} />
