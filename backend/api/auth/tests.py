@@ -103,3 +103,82 @@ def test_garbage_token_is_rejected(api_client):
     # The code can: an anonymous request gets "not_authenticated", a token that
     # was read and rejected gets "token_not_valid".
     assert response.data["code"] == "token_not_valid"
+
+
+# ---- throttling (rate limiting) -------------------------------------------
+# The limits themselves are in settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]:
+# login 5/min, signup 5/min. conftest.py clears the counters before each test.
+
+def _bad_login(client, **extra):
+    return client.post(
+        LOGIN_URL,
+        {"email": "nobody@example.com", "password": "wrong-password"},
+        format="json",
+        **extra,
+    )
+
+
+@pytest.mark.django_db
+def test_login_is_blocked_after_five_attempts(api_client):
+    # Five wrong guesses are answered normally (401)...
+    for _ in range(5):
+        assert _bad_login(api_client).status_code == 401
+    # ...the sixth never reaches the login code at all.
+    response = _bad_login(api_client)
+    assert response.status_code == 429
+    # Retry-After tells the client how many seconds to wait, so the frontend
+    # can show a message instead of guessing.
+    assert int(response["Retry-After"]) > 0
+
+
+@pytest.mark.django_db
+def test_login_limit_is_per_address_not_global(api_client):
+    # One address using up its five attempts must not lock everyone else out.
+    for _ in range(6):
+        _bad_login(api_client, REMOTE_ADDR="203.0.113.1")
+    assert _bad_login(api_client, REMOTE_ADDR="203.0.113.1").status_code == 429
+    assert _bad_login(api_client, REMOTE_ADDR="203.0.113.2").status_code == 401
+
+
+@pytest.mark.django_db
+def test_correct_password_is_also_blocked_once_over_the_limit(api_client, user):
+    # The limit counts attempts, not failures - otherwise an attacker could
+    # keep guessing and the real password would still be accepted mid-attack.
+    for _ in range(5):
+        _bad_login(api_client)
+    response = api_client.post(
+        LOGIN_URL, {"email": user.email, "password": "pw12345"}, format="json"
+    )
+    assert response.status_code == 429
+
+
+@pytest.mark.django_db
+def test_signup_is_blocked_after_five_attempts(api_client):
+    def signup(i):
+        return api_client.post(
+            SIGNUPURL,
+            {"name": "N", "email": f"user{i}@example.com", "password": "pw123456"},
+            format="json",
+        )
+
+    for i in range(5):
+        assert signup(i).status_code == 201
+    assert signup(5).status_code == 429
+
+
+@pytest.mark.django_db
+def test_forwarded_header_is_ignored_when_no_proxy_is_configured(api_client):
+    # NUM_PROXIES is 0 in tests, so X-Forwarded-For must NOT be trusted: if it
+    # were, an attacker could dodge the limit by sending a new fake address
+    # with every request.
+    for i in range(5):
+        _bad_login(api_client, HTTP_X_FORWARDED_FOR=f"198.51.100.{i}")
+    response = _bad_login(api_client, HTTP_X_FORWARDED_FOR="198.51.100.99")
+    assert response.status_code == 429
+
+
+@pytest.mark.django_db
+def test_health_check_is_never_throttled(api_client):
+    # Azure polls this constantly from one address.
+    for _ in range(40):
+        assert api_client.get("/api/monitoring/health/").status_code == 200

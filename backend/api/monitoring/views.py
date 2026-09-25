@@ -1,8 +1,11 @@
+import logging
 from django.db import connection
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+
+logger = logging.getLogger(__name__)
 
 
 class HealthCheckView(APIView):
@@ -11,6 +14,9 @@ class HealthCheckView(APIView):
     # turn a healthy container into a 401.
     authentication_classes = []
     permission_classes = [AllowAny]
+    # Azure polls this every few seconds from one address; the default
+    # anonymous limit would answer 429 and make a healthy container look dead.
+    throttle_classes = []
 
     def get(self, request):
         try:
@@ -20,6 +26,9 @@ class HealthCheckView(APIView):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
         except Exception:
+            # logger.exception records the traceback, so the log says *why*
+            # Postgres was unreachable, not just that the probe returned 503.
+            logger.exception("health check failed: database unreachable")
             # 503: the app itself didn't break, a dependency
             # (Postgres) is unreachable - lets Azure/monitoring tell "bug
             # in our code" apart from "dependency is down".

@@ -90,6 +90,8 @@ Other scripts: `npm run build`, `npm run preview`, `npm run lint` (type-check).
 | `ALLOWED_HOSTS` | Comma-separated list of hostnames the API will serve. |
 | `DATABASE_URL` | Postgres connection string, e.g. `postgres://user:password@localhost:5432/lattice`. |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of frontend origins allowed to call the API. |
+| `LOG_LEVEL` | Minimum level written to the logs: `DEBUG`, `INFO`, `WARNING` or `ERROR`. Defaults to `INFO`. |
+| `NUM_PROXIES` | Number of reverse proxies in front of the API, used to find the real client IP for rate limiting. `0` for local development. |
 
 ### Frontend (`frontend/.env`)
 

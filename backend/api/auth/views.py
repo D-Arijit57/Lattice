@@ -2,16 +2,27 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
+from rest_framework.throttling import BaseThrottle, ScopedRateThrottle
 
 from api.auth.serializers.signup_serializer import SignupSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.settings import api_settings
+from rest_framework.exceptions import AuthenticationFailed
 from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class SignupView(APIView):
     # AllowAny: signup has to be reachable by someone who isn't
     # authenticated yet - that's the whole point of the endpoint.
     permission_classes = [AllowAny]
+    # Strict per-IP limit (DEFAULT_THROTTLE_RATES["signup"]) against signup
+    # spam. Naming ScopedRateThrottle here replaces the loose default
+    # throttles for this view only; the scope picks which rate applies.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "signup"
 
     def post(self, request):
         serializer = SignupSerializer(data=request.data)
@@ -27,12 +38,26 @@ class SignupView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
 class CookieTokenObtainPairView(TokenObtainPairView):
+    # Strictest limit: this is the endpoint password guessing goes through.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
+
     def post(self, request, *args, **kwargs):
         # super().post() runs simplejwt's normal login: validates
         # credentials via the serializer and returns a Response whose
         # .data is {"access": ..., "refresh": ...}. We only change what
         # happens to that response after it's built.
-        response = super().post(request, *args, **kwargs)
+        try:
+            response = super().post(request, *args, **kwargs)
+        except AuthenticationFailed:
+            # Wrong password or unknown email (same error for both, by
+            # design). Log the caller's address, never the email or password:
+            # a burst of these from one address is what a guessing attack
+            # looks like. get_ident() is the same lookup the throttle uses,
+            # so it honours NUM_PROXIES and shows the real client behind the
+            # proxy, not the proxy itself.
+            logger.warning("login failed ip=%s", BaseThrottle().get_ident(request))
+            raise
 
         # .pop() both reads the token and removes it from response.data in
         # one step. This is what actually makes the tokens httpOnly: if we
@@ -75,6 +100,12 @@ class CookieTokenObtainPairView(TokenObtainPairView):
 
 
 class CookieTokenRefreshView(TokenRefreshView):
+    # Looser than login (the frontend refreshes on its own when a token
+    # expires) but still capped so a stolen refresh cookie can't be spun
+    # into unlimited access tokens.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "refresh"
+
     def post(self, request, *args, **kwargs):
         # Stock TokenRefreshView reads the refresh token from
         # request.data["refresh"]. Ours lives in the refresh_token cookie
