@@ -1,4 +1,4 @@
-# Loom Frontend Audit
+# Lattice Frontend Audit
 
 **Date:** 2026-09-16
 **Scope:** `/Users/arijitdas/Loom/frontend` — the entire Vite + React 19 + TypeScript + Tailwind v4 + React Router 7 control-plane app.
