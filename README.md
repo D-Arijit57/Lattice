@@ -97,7 +97,7 @@ Other scripts: `npm run build`, `npm run preview`, `npm run lint` (type-check).
 
 | Variable | Description |
 |---|---|
-| `VITE_API_BASE_URL` | Base URL of the API, e.g. `http://localhost:8000/api`. |
+| `VITE_API_BASE_URL` | Base URL of the API. `http://localhost:8000/api` in dev; `/api` (relative) in production — deployment is single-origin, so the built SPA and the API share one host (see `frontend/.env.production.example`). |
 
 ## Running the tests
 

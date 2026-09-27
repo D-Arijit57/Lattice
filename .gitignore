@@ -9,6 +9,7 @@ Progress-Audit.md
 gap.md
 bug.md
 v1.knowledge.md
+APIKey.md
 API_Contract.md
 .env*
 !.env.example

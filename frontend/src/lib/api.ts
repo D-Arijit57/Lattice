@@ -21,10 +21,36 @@ export class ApiError extends Error {
   }
 }
 
+// Paths that must never trigger a refresh-and-retry on 401: /refresh/ itself
+// (would recurse) and /login/ (a 401 there means wrong credentials, not an
+// expired access cookie).
+const NO_REFRESH_PATHS = ['/auth/refresh/', '/auth/login/'];
+
+// Only one refresh should ever be in flight - if several requests 401 at
+// once, they all await this same promise instead of each hitting
+// /auth/refresh/ (which would rotate the access cookie repeatedly).
+let refreshPromise: Promise<void> | null = null;
+
+function refreshAccessToken(): Promise<void> {
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${BASE_URL}/auth/refresh/`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((response) => {
+        if (!response.ok) throw new ApiError(response.status, null)
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 // credentials: 'include' on every call - the access/refresh tokens live in
 // httpOnly cookies, never in JS-readable state, so the browser has to be
 // told to send them itself on cross-origin requests.
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
     credentials: 'include',
@@ -33,6 +59,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...options.headers,
     },
   });
+
+  // The access cookie is good for 15 minutes; a 401 here usually just means
+  // it expired mid-session. Refresh it once via the refresh cookie and
+  // replay the original request before giving up.
+  if (response.status === 401 && retry && !NO_REFRESH_PATHS.includes(path)) {
+    try {
+      await refreshAccessToken();
+    } catch {
+      const body = await response.json().catch(() => null);
+      throw new ApiError(response.status, body);
+    }
+    return request<T>(path, options, false);
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
