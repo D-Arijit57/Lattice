@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom"
-import { LayoutDashboard, Database, Search, Plus, Check } from "lucide-react"
+import { LayoutDashboard, Database, Search, Plus, Check, KeyRound } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
@@ -124,6 +124,16 @@ function Sidebar({
           <NavLink to={`${base}/content-types`} className={({ isActive }) => navLinkClass(isActive)}>
             <Database className="h-4 w-4" />
             Content Types
+          </NavLink>
+        </nav>
+
+        <div className="mt-6 px-4 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+          Settings
+        </div>
+        <nav className="grid gap-1 px-3">
+          <NavLink to={`${base}/api-keys`} className={({ isActive }) => navLinkClass(isActive)}>
+            <KeyRound className="h-4 w-4" />
+            API Keys
           </NavLink>
         </nav>
       </div>

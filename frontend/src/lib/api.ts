@@ -1,4 +1,6 @@
 import type {
+  APIKey,
+  APIKeyCreated,
   ContentType,
   ContentTypeVersion,
   Entry,
@@ -168,6 +170,23 @@ export const contentTypes = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+};
+
+export const apiKeys = {
+  list: (orgId: number) => request<APIKey[]>(`${inOrg(orgId)}/api-keys/`),
+
+  // The secret is only ever present in this one response - the server never
+  // stores or returns it again after this.
+  create: (orgId: number, data: { name: string }) =>
+    request<APIKeyCreated>(`${inOrg(orgId)}/api-keys/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // Revoke, not delete: the row stays, revoked_at gets set. DELETE is just
+  // the HTTP verb the backend chose for that action.
+  revoke: (orgId: number, id: number) =>
+    request<void>(`${inOrg(orgId)}/api-keys/${id}/`, { method: 'DELETE' }),
 };
 
 export const fields = {

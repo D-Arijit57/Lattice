@@ -65,3 +65,19 @@ export type EntryPage = {
   previous: string | null;
   results: Entry[];
 };
+
+// What GET/POST/DELETE /organizations/{org}/api-keys/ return. The backend
+// serializer only exposes these four fields - hashed_key never leaves the
+// server, so it has no business in this type either.
+export type APIKey = {
+  id: number;
+  name: string;
+  created_at: string;
+  revoked_at: string | null;
+};
+
+// Only the create response includes this - the raw secret is generated once,
+// shown once, and never stored or returned again after this.
+export type APIKeyCreated = APIKey & {
+  key: string;
+};

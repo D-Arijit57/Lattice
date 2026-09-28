@@ -11,6 +11,7 @@ import { RequireAuth } from "@/components/auth/RequireAuth"
 import { AuthPage } from "@/pages/AuthPage"
 import { HomeRedirect } from "@/pages/HomeRedirect"
 import { WorkspaceOverview } from "@/pages/WorkspaceOverview"
+import { ApiKeysPage } from "@/pages/ApiKeysPage"
 import { ContentTypesList } from "@/pages/content-types/ContentTypesList"
 import { ContentTypeWorkspace } from "@/pages/content-types/ContentTypeWorkspace"
 import { ContentTypeOverview } from "@/pages/content-types/ContentTypeOverview"
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/orgs/:orgId" element={<AppShell />}>
             <Route index element={<WorkspaceOverview />} />
             <Route path="content-types" element={<ContentTypesList />} />
+            <Route path="api-keys" element={<ApiKeysPage />} />
             <Route path="content-types/:slug" element={<ContentTypeWorkspace />}>
               <Route index element={<ContentTypeOverview />} />
               <Route path="schema" element={<SchemaEditor />} />

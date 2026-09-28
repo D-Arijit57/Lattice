@@ -34,8 +34,10 @@ export function ApiDocs() {
         <h3 className="text-2xl font-bold tracking-tight text-neutral-900 mb-2">API</h3>
         <p className="font-mono text-sm text-neutral-500">Base URL: {API_BASE}</p>
         <p className="text-neutral-600 mt-4">
-          Requests are authenticated with the session cookies set at login (there are no API keys).
-          Sign in once, keep the cookies, and send them with every call.
+          Requests to this API are authenticated with the session cookies set at login - sign in
+          once, keep the cookies, and send them with every call. You can also create read-only
+          API keys for this organization from Settings → API Keys, for your own external services
+          to use; the separate delivery API that accepts them is coming soon.
         </p>
       </div>
 
