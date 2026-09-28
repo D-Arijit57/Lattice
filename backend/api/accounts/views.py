@@ -3,15 +3,10 @@ from django.utils import timezone
 from rest_framework import mixins, permissions, viewsets, status
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.response import Response
-from accounts.models import Organization, OrganizationMembership, APIKey
+from accounts.models import Organization, OrganizationMembership, APIKey, hash_api_key
 from api.accounts.serializers.org_serializer import OrganizationSerializer
 from api.accounts.serializers.api_key_serializer import APIKeySerializer
-import hashlib, secrets
-
-
-# hashkey helper function
-def hash_api_key(raw_key: str) -> str:
-    return hashlib.sha256(raw_key.encode()).hexdigest()
+import secrets
 
 # Placeholder until a real Role model exists. The person who creates an
 # organization is stored as its first member with this role id.

@@ -185,6 +185,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'api.auth.authentication.CookieJWTAuthentication',
+        'api.delivery.authentication.APIKeyAuthentication',
     ],
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
@@ -196,6 +197,7 @@ REST_FRAMEWORK = {
         'login': '5/min',
         'signup': '5/min',
         'refresh': '30/min',
+        'delivery' : '60/min'
     },
     'NUM_PROXIES': env.int('NUM_PROXIES', default=0),
 }

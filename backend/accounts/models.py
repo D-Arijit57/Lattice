@@ -1,5 +1,16 @@
+import hashlib
+
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.db import models
+
+# Lives here, not in a views.py, because it's needed by low-level modules
+# (the delivery authentication class) that can't safely import a DRF views
+# module - views.py pulls in the whole viewsets machinery, which creates a
+# circular import when something as early-loading as an authentication class
+# needs it. models.py only ever imports Django's own base classes, so nothing
+# importing this can ever circle back.
+def hash_api_key(raw_key: str) -> str:
+    return hashlib.sha256(raw_key.encode()).hexdigest()
 
 # Organization
 # models.model is the base class for django for database_backed models
