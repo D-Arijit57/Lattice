@@ -23,6 +23,7 @@ Validation errors are returned per field, all at once:
 - Each organization owns many `content_types`, and each content type owns many `fields`.
 - `content_type_versions` store the generated JSON Schema for a content type, numbered per content type.
 - `entries` keep their data as JSONB and reference a `content_type_version`, not the content type directly.
+- Each organization can issue `api_keys` - read-only credentials (`hashed_key`, revocable via `revoked_at`) that let an external app fetch that organization's content without a logged-in user.
 
 ## Tech stack
 
