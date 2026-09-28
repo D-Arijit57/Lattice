@@ -75,6 +75,19 @@ Table entries {
   updated_at timestamp
 }
 
+// API key Model
+// by using this the user's backend
+// can fetch the content from 
+// our data engine
+Table api_keys{
+  id integer [primary key]
+  organization_id integer [not null]
+  name varchar
+  hashed_key varchar [not null]
+  created_at timestamp
+  revoked_at timestamp
+}
+
 // Relationships
 Ref: content_types.organization_id > organizations.id
 Ref: content_type_versions.content_type_id > content_types.id
@@ -82,3 +95,4 @@ Ref: fields.content_type_id > content_types.id
 Ref: organization_memberships.user_id > users.id
 Ref: organization_memberships.organization_id > organizations.id
 Ref: entries.content_type_version_id > content_type_versions.id
+Ref: api_keys.organization_id > organizations.id

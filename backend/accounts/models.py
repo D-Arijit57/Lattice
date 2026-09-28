@@ -1,7 +1,6 @@
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.db import models
 
-
 # Organization
 # models.model is the base class for django for database_backed models
 # interpretation : Organization is a database entity. Take the fields I define inside this class and use them to construct/manage the corresponding database table.
@@ -68,3 +67,21 @@ class OrganizationMembership(models.Model):
 
     def __str__(self):
         return f"{self.user} @ {self.organization}"
+# APIKey : 
+# using this the user can connect their backend with out data engine and fetch the content
+# for their specific backend (e.g Calender system)   
+class APIKey(models.Model):
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="api_keys"
+    )
+    name = models.CharField(max_length=255)
+    
+    hashed_key = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    
+    def __str__(self):
+        return f"{self.organization}"
+        
