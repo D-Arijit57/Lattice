@@ -141,4 +141,4 @@ POST /api/organizations/1/content-types/1/versions/ {}
 POST /api/organizations/1/content-types/1/entries/  {"data": {"title": "Shirt", "price": 499}}
 ```
 
-See [`API-Contract.md`](API-Contract.md) for exact request and response shapes, status codes, and error formats.
+See [`API-Contract.md`](API-Contract.md) for exact request and response shapes and error formats.
