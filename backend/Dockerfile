@@ -9,4 +9,5 @@ COPY . .
 
 EXPOSE 8000
 
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["gunicorn", "content_engine.wsgi", "--bind", "0.0.0.0:8000"]
