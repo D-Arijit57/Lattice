@@ -24,10 +24,10 @@ Verified **live on 2026-09-20** against the running Django dev server (a scratch
 
 | Endpoint | Auth | Sends | Success | Failures |
 |---|---|---|---|---|
-| `POST /api/auth/signup/` | none (but see Surprise 1) | `{name, email, password}` | `201 {id, name, email, created_at}` | `400` per-field errors: `email` duplicate `["user with this email already exists."]`, `password` list (min 8 chars, too common, all numeric), any missing field `["This field is required."]`. Malformed JSON: `400 {"detail": "JSON parse error - ..."}` |
+| `POST /api/auth/signup/` | none (never authenticates, see Surprise 1) | `{name, email, password}` | `201 {id, name, email, created_at}` | `400` per-field errors: `email` duplicate `["user with this email already exists."]`, `password` list (min 8 chars, too common, all numeric), any missing field `["This field is required."]`. Malformed JSON: `400 {"detail": "JSON parse error - ..."}` |
 | `POST /api/auth/login/` | none | `{email, password}` | `200 {}` plus **two `Set-Cookie`** headers. Tokens are never in the body. | `400` missing fields (per-field errors). `401 {"detail": "No active account found with the given credentials"}`, identical for wrong password and unknown email. |
 | `POST /api/auth/refresh/` | `refresh_token` cookie | nothing | `200 {}` plus a new `access_token` cookie. The refresh token is **not** rotated. | `401 {"detail": "Refresh token cookie not found."}` if no cookie. `401 {"detail": "Token is invalid", "code": "token_not_valid"}` if bad or expired. |
-| `POST /api/auth/logout/` | none required | nothing | `204`, no body, two `Set-Cookie` headers that expire both cookies | `401` token_not_valid if the request carries an expired or garbage `access_token` cookie, and then **the cookies are not cleared** (Surprise 1) |
+| `POST /api/auth/logout/` | none required | nothing | `204`, no body, two `Set-Cookie` headers that expire both cookies | none; an expired or garbage `access_token` cookie is ignored and the cookies are still cleared (Surprise 1) |
 | `GET /api/auth/me/` | `access_token` cookie | nothing | `200 {id, email, name}` | `401 {"detail": "Authentication credentials were not provided."}` with no cookie. `401 {"detail": "Given token not valid for any token type", "code": "token_not_valid", "messages": [{"token_class": "AccessToken", "token_type": "access", "message": "Token is expired"}]}` for a bad or expired cookie (`message` is `"Token is invalid"` for garbage) |
 
 ### Organizations
@@ -100,7 +100,7 @@ Plus one that is **not JSON**: any unknown URL or non-integer id (`/api/nope/`, 
 
 ## 5. Surprises (where live behavior differs from what the code suggests)
 
-1. **An expired access cookie blocks logout and signup.** DRF authenticates every request that touches `request.user`, and `LogoutView` and `SignupView` don't switch authentication off (login and refresh do, via simplejwt's `authentication_classes = ()`). So a user whose 15-minute token expired gets `401` on logout and the cookies stay. *Client consequence:* refresh first, or treat logout as best-effort. *Backend option (your call):* set `authentication_classes = []` on those two views.
+1. **(Fixed) An expired access cookie used to block logout and signup.** `SignupView` and `LogoutView` now set `authentication_classes = []`, so a stale cookie is ignored and both always work. Kept here because older clients may still work around it by refreshing first.
 2. **Org existence leaks, and 403/404 are inconsistent.** `GET /organizations/{id}/` returns `404` for an org you're not in, but `GET /organizations/{id}/content-types/` returns `403 "You are not a member"`, so any logged-in user can tell which org ids exist. Decision 106 says other orgs' rows should look like they don't exist; the membership check in `get_organization()` doesn't follow that.
 3. **Nothing can be edited or deleted.** No `PUT`/`PATCH`/`DELETE` on any resource. A UI "edit entry", "edit field" or "delete content type" has no endpoint to call.
 4. **Version creation with no fields returns a bare JSON array**, unlike every other 400. The `create()` path raises the error outside normal validation, so DRF doesn't wrap it in an object.

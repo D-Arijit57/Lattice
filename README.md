@@ -104,6 +104,7 @@ Other scripts: `npm run build`, `npm run preview`, `npm run lint` (type-check).
 
 ```bash
 cd backend
+pip install -r requirements-dev.txt   # includes requirements.txt
 pytest
 ```
 
