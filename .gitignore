@@ -13,3 +13,4 @@ APIKey.md
 API_Contract.md
 .env*
 !.env.example
+knowledge_transfer.md
