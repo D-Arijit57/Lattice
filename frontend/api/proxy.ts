@@ -3,7 +3,7 @@
 // vercel.json rewrites /api/<path> here as /api/proxy?__p=<path> because a
 // catch-all filename only matched a single path segment on Vercel.
 // To move the backend to another host, change BACKEND_ORIGIN.
-const BACKEND_ORIGIN = "https://lattice-backend-64ej.onrender.com"
+const BACKEND_ORIGIN = "https://lattice-backend-ukvn.onrender.com"
 const PATH_PARAM = "__p"
 
 // Headers that describe the hop between the browser and Vercel, not the request
