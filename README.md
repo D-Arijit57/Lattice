@@ -6,6 +6,8 @@ A multi-tenant, headless content engine. Organizations define their own content 
 
 **Live demo:** https://lattice-five-orcin.vercel.app
 
+**Tech stack:** Python, Django, Django REST Framework, PostgreSQL (JSONB), JWT auth, React, Vite, Tailwind CSS, Docker, GitHub Actions, Vercel, Render, Supabase.
+
 ## Contents
 
 - [How it works](#how-it-works)
