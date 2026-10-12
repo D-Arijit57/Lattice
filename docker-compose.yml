@@ -7,7 +7,8 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
       DATABASE_URL: ${DATABASE_URL}
       # Proxies between the internet and Django, for real client IPs in rate
-      # limiting. Locally: nginx only = 1. Behind Azure ingress + nginx = 2.
+      # limiting. Locally: nginx only = 1. On Vercel + Render the
+      # chain is longer; measure it (see render.yaml).
       NUM_PROXIES: ${NUM_PROXIES:-1}
 
   web:

@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: lattice-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/monitoring/health/
+    envVars:
+      # Secrets and host-specific values are entered in the Render dashboard
+      # (sync: false), never committed.
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      # Must include this service's *.onrender.com host (Vercel's rewrite
+      # forwards it as Host) and the Vercel domain.
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: DEBUG
+        value: "False"
+      # Vercel + Render hops in front of Django; re-measure from a logged
+      # X-Forwarded-For after first deploy.
+      - key: NUM_PROXIES
+        value: "2"
