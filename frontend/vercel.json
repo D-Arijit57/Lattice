@@ -1,4 +1,5 @@
 {
+  "regions": ["sin1"],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/proxy?__p=$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }

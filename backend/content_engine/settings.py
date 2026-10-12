@@ -119,6 +119,14 @@ WSGI_APPLICATION = 'content_engine.wsgi.application'
 DATABASES = {
     'default': env.db('DATABASE_URL'),
 }
+# Keep the Postgres connection open between requests for DB_CONN_MAX_AGE
+# seconds. Without this Django opens a new one per request, and the TCP/TLS/
+# auth handshake to a remote database costs more than the query itself. Off by
+# default (0) so tests and local runs close connections; the host sets it.
+# Health checks drop a connection the pooler closed while idle instead of
+# failing the next request.
+DATABASES['default']['CONN_MAX_AGE'] = env.int('DB_CONN_MAX_AGE', default=0)
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
