@@ -2,13 +2,14 @@ import type { ReactNode } from "react"
 import { Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { BASE_URL } from "@/lib/api"
 import { useOrgId } from "@/lib/use-org"
 import { useContentType } from "./ContentTypeWorkspace"
 
 // The API is reached through the same origin as this app. VITE_API_BASE_URL
 // may be relative ("/api") or absolute, so resolve it against the page's own
 // address to show something a person can actually paste into a terminal.
-const API_BASE = new URL(import.meta.env.VITE_API_BASE_URL, window.location.origin).href.replace(/\/$/, "")
+const API_BASE = new URL(BASE_URL, window.location.origin).href.replace(/\/$/, "")
 
 export function ApiDocs() {
   const contentType = useContentType()

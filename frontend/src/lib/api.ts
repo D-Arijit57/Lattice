@@ -10,7 +10,9 @@ import type {
   Organization,
 } from '@/types'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+// Vite inlines this at build time. Fall back to the same-origin /api so a
+// host that forgets to set it (e.g. Vercel) doesn't send requests to "undefined/...".
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export class ApiError extends Error {
   status: number;
