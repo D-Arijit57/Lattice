@@ -1,7 +1,10 @@
 // Vercel Function: forwards every /api/* request to the Django backend so the
 // browser only ever talks to this origin (cookies stay first-party, no CORS).
+// vercel.json rewrites /api/<path> here as /api/proxy?__p=<path> because a
+// catch-all filename only matched a single path segment on Vercel.
 // To move the backend to another host, change BACKEND_ORIGIN.
 const BACKEND_ORIGIN = "https://lattice-backend-64ej.onrender.com"
+const PATH_PARAM = "__p"
 
 // Headers that describe the hop between the browser and Vercel, not the request
 // itself. fetch() recomputes them for the Render hop.
@@ -13,7 +16,13 @@ const SKIP_RESPONSE_HEADERS = ["content-encoding", "content-length", "transfer-e
 export default {
   async fetch(request: Request): Promise<Response> {
     const incoming = new URL(request.url)
-    const target = BACKEND_ORIGIN + incoming.pathname + incoming.search
+    const path = incoming.searchParams.get(PATH_PARAM)
+    if (path === null) return new Response("Not found", { status: 404 })
+    incoming.searchParams.delete(PATH_PARAM)
+    // Rewrite params drop the trailing slash; every Django route needs it.
+    const slash = path.endsWith("/") ? "" : "/"
+    const query = incoming.searchParams.toString()
+    const target = `${BACKEND_ORIGIN}/api/${path}${slash}${query ? "?" + query : ""}`
 
     const headers = new Headers(request.headers)
     for (const name of SKIP_REQUEST_HEADERS) headers.delete(name)
