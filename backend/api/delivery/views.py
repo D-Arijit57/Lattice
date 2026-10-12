@@ -1,6 +1,5 @@
 from rest_framework import mixins, viewsets
 from rest_framework.exceptions import NotFound
-from rest_framework.throttling import AnonRateThrottle
 
 from content.models import ContentType, Entry
 from api.content.pagination import EntryCursorPagination
@@ -13,7 +12,10 @@ from api.delivery.throttling import APIKeyRateThrottle
 class DeliveryEntryViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     authentication_classes = [APIKeyAuthentication]
     permission_classes = [HasValidAPIKey]
-    throttle_classes = [AnonRateThrottle, APIKeyRateThrottle]
+    # Per-key limit only. API-key requests have no user, so DRF's AnonRateThrottle
+    # would also count them per client IP (30/min) and cap a server-side
+    # integration well below the intended per-key limit.
+    throttle_classes = [APIKeyRateThrottle]
     serializer_class = EntrySerializer
     pagination_class = EntryCursorPagination
     

@@ -224,16 +224,22 @@ def test_delivery_is_read_only(api_client, acme, method):
 # --- rate limiting ---
 
 @pytest.mark.django_db
-def test_requests_are_rate_limited(api_client, acme):
-    # Delivery throttles on the anonymous (per-IP) scope and on a per-key
-    # scope; whichever limit is hit first returns 429 with Retry-After.
-    statuses = []
-    for _ in range(70):
-        response = api_client.get(_list_url(), **_auth(RAW_KEY))
-        statuses.append(response.status_code)
-        if response.status_code == 429:
-            break
+def test_each_key_is_limited_to_60_requests_per_minute(api_client, acme):
+    # 60/min is the "delivery" rate in settings; the 61st request is refused.
+    for _ in range(60):
+        assert api_client.get(_list_url(), **_auth(RAW_KEY)).status_code == 200
 
-    assert statuses[0] == 200
-    assert statuses[-1] == 429
+    response = api_client.get(_list_url(), **_auth(RAW_KEY))
+
+    assert response.status_code == 429
     assert "Retry-After" in response
+
+
+@pytest.mark.django_db
+def test_rate_limit_is_per_key_not_per_ip(api_client, acme, globex):
+    # Same client IP for both requests; exhausting one key must not affect another.
+    for _ in range(60):
+        api_client.get(_list_url(), **_auth(RAW_KEY))
+    assert api_client.get(_list_url(), **_auth(RAW_KEY)).status_code == 429
+
+    assert api_client.get(_list_url(), **_auth(OTHER_RAW_KEY)).status_code == 200
