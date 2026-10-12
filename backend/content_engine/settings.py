@@ -21,8 +21,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env()
 # Loads BASE_DIR/.env into the real process environment (os.environ) if that
 # file exists - true only in local dev, since .env is gitignored and never
-# deployed. In production there's no .env file; Azure sets the same variable
-# names directly as environment variables, so every env(...) call below reads
+# deployed. In production there's no .env file; the host (Render) sets the same
+# variable names directly as environment variables, so every env(...) call below reads
 # from the same place (os.environ) either way - this line just seeds it
 # locally before anything else runs.
 env.read_env(BASE_DIR / '.env')
@@ -115,7 +115,7 @@ WSGI_APPLICATION = 'content_engine.wsgi.application'
 # (postgres://user:pass@host:port/name) into this dict's ENGINE/NAME/USER/
 # PASSWORD/HOST/PORT shape, inferring the postgresql backend from the
 # "postgres://" scheme. Matches the single connection-string format managed
-# Postgres providers (including Azure's) hand you.
+# Postgres providers (Supabase, Render, etc.) hand you.
 DATABASES = {
     'default': env.db('DATABASE_URL'),
 }
@@ -186,7 +186,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 #                  those views opts in with throttle_scope = "<name>".
 # NUM_PROXIES: how many proxies sit between the internet and Django. DRF needs
 # it to read the real client IP out of X-Forwarded-For; without it every user
-# behind Azure/nginx looks like the same address and shares one limit. Left
+# behind the proxy chain looks like the same address and shares one limit. Left
 # at 0 locally (use REMOTE_ADDR as is); set it in production once the proxy
 # chain is known - too low lets clients fake their IP, too high blames the
 # wrong address.
@@ -231,7 +231,7 @@ SIMPLE_JWT = {
 
 
 # Logging. Everything goes to stdout, not a file: in a container the platform
-# (Azure) collects stdout itself, and a file inside the container disappears
+# (Render) collects stdout itself, and a file inside the container disappears
 # with it. LOG_LEVEL is an env var so prod can be raised/lowered without a
 # code change; INFO keeps app events + warnings/errors and drops DEBUG noise.
 # Django's own "django.request" logger already writes 5xx (with traceback)
@@ -263,9 +263,9 @@ LOGGING = {
 }
 
 
-# HTTPS / proxy settings (Decision 109). In prod, Azure's ingress terminates
-# TLS and stamps X-Forwarded-Proto: https before the request reaches nginx;
-# nginx must pass that header through unchanged. This tells Django which
+# HTTPS / proxy settings (Decision 109). In prod, the host's proxy terminates
+# TLS and stamps X-Forwarded-Proto: https before the request reaches Django
+# (and nginx, in the local compose setup, must pass it through unchanged). This tells Django which
 # header to trust and what value means "the original request was HTTPS" -
 # Django sees incoming headers with HTTP_ prefixed + dashes -> underscores.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

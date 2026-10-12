@@ -9,12 +9,12 @@ logger = logging.getLogger(__name__)
 
 
 class HealthCheckView(APIView):
-    # Skips JWT auth entirely - Azure's own infrastructure polls this, not a
+    # Skips JWT auth entirely - the platform's health probe and the uptime monitor poll this, not a
     # logged-in user, and a garbage/expired cookie should never be able to
     # turn a healthy container into a 401.
     authentication_classes = []
     permission_classes = [AllowAny]
-    # Azure polls this every few seconds from one address; the default
+    # Probes and monitors poll this every few seconds from one address; the default
     # anonymous limit would answer 429 and make a healthy container look dead.
     throttle_classes = []
 
@@ -30,7 +30,7 @@ class HealthCheckView(APIView):
             # Postgres was unreachable, not just that the probe returned 503.
             logger.exception("health check failed: database unreachable")
             # 503: the app itself didn't break, a dependency
-            # (Postgres) is unreachable - lets Azure/monitoring tell "bug
+            # (Postgres) is unreachable - lets the platform/monitoring tell "bug
             # in our code" apart from "dependency is down".
             return Response(
                 {"status": "unhealthy"},

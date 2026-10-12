@@ -1,5 +1,9 @@
 # Lattice
 
+[![CI](https://github.com/D-Arijit57/Lattice/actions/workflows/ci.yml/badge.svg)](https://github.com/D-Arijit57/Lattice/actions/workflows/ci.yml)
+
+**Live demo:** https://lattice-five-orcin.vercel.app
+
 A composable, multi-tenant content engine. Organizations define their own content types (Product, Event, Course, ...) at runtime by declaring fields, then store and query entries through a REST API. No code change or database migration is needed per content type.
 
 ## How it works
@@ -33,13 +37,30 @@ Validation errors are returned per field, all at once:
 | Auth | JWT (`djangorestframework-simplejwt`) in httpOnly cookies |
 | Serving | Gunicorn |
 | Frontend | Vite, React 19, TypeScript, Tailwind CSS, React Router |
-| Tests | pytest, pytest-django |
+| Tests / CI | pytest, pytest-django, GitHub Actions (Postgres service container) |
+| Hosting | Vercel (SPA + `/api` proxy function), Render (Docker, Singapore), Supabase Postgres (Singapore) |
+
+## Architecture and deployment
+
+```
+Browser -> Vercel (static SPA + api/proxy.ts function) -> Render (Docker, Gunicorn + Django) -> Supabase Postgres
+```
+
+- The browser only talks to one origin. Vercel serves the built SPA and rewrites every `/api/*` request to a small function (`frontend/api/proxy.ts`) that forwards it to the Render backend, including cookies. This keeps the httpOnly auth cookies first-party and removes the need for CORS in production.
+- The backend runs from `backend/Dockerfile`; the entrypoint applies migrations before Gunicorn starts. `render.yaml` describes the service, and secrets are entered in the Render dashboard rather than committed.
+- The backend and database are both in Singapore. Moving the backend next to the database, plus reusing Postgres connections (`DB_CONN_MAX_AGE`), cut the health-check latency from about 1.5 s to about 0.2 s.
+- `docker-compose.yml` and `frontend/nginx.conf` are for running the full stack locally; production does not use nginx.
+- An uptime monitor pings `GET /api/monitoring/health/` every 5 minutes, which keeps the free Render instance awake and the database active.
+- CI (`.github/workflows/ci.yml`) runs the backend tests against a throwaway Postgres container and type-checks and builds the frontend on every push and pull request. Vercel and Render deploy from `master` on their own.
 
 ## Repository layout
 
 ```
-backend/    Django + DRF API
-frontend/   Vite + React control plane
+backend/                  Django + DRF API
+frontend/                 Vite + React control plane
+frontend/api/proxy.ts     Vercel function that forwards /api/* to the backend
+.github/workflows/        CI (tests, type-check, build)
+render.yaml               Render service definition
 ```
 
 ## Getting started
@@ -92,13 +113,14 @@ Other scripts: `npm run build`, `npm run preview`, `npm run lint` (type-check).
 | `DATABASE_URL` | Postgres connection string, e.g. `postgres://user:password@localhost:5432/lattice`. |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of frontend origins allowed to call the API. |
 | `LOG_LEVEL` | Minimum level written to the logs: `DEBUG`, `INFO`, `WARNING` or `ERROR`. Defaults to `INFO`. |
+| `DB_CONN_MAX_AGE` | Seconds to keep a Postgres connection open between requests. Defaults to `0` (close after each request); set it (e.g. `60`) on a host where the database is remote. |
 | `NUM_PROXIES` | Number of reverse proxies in front of the API, used to find the real client IP for rate limiting. `0` for local development. |
 
 ### Frontend (`frontend/.env`)
 
 | Variable | Description |
 |---|---|
-| `VITE_API_BASE_URL` | Base URL of the API. `http://localhost:8000/api` in dev; `/api` (relative) in production — deployment is single-origin, so the built SPA and the API share one host (see `frontend/.env.production.example`). |
+| `VITE_API_BASE_URL` | Base URL of the API. `http://localhost:8000/api` in dev; `/api` (relative) in production, where the built SPA and the API share one host (see `frontend/.env.production.example`). Falls back to `/api` when unset. |
 
 ## Running the tests
 
@@ -108,7 +130,7 @@ pip install -r requirements-dev.txt   # includes requirements.txt
 pytest
 ```
 
-Tests run against a temporary Postgres database that Django creates and drops automatically.
+Tests run against a temporary Postgres database that Django creates and drops automatically. Point `DATABASE_URL` at a local Postgres rather than a hosted one: against a remote database the suite takes minutes instead of seconds. CI does this on every push.
 
 ## API overview
 
@@ -122,6 +144,8 @@ All routes are under `/api/`. Requests and responses are JSON. Authentication us
 | Fields | `GET, POST .../content-types/{ct}/fields/`, `GET .../fields/{id}/` |
 | Versions | `GET, POST .../content-types/{ct}/versions/`, `GET .../versions/{id}/` |
 | Entries | `GET, POST .../content-types/{ct}/entries/`, `GET .../entries/{id}/` |
+| API keys | `GET, POST organizations/{org}/api-keys/`, `DELETE organizations/{org}/api-keys/{id}/` (revoke) |
+| Delivery (API key) | `GET delivery/content-types/{slug}/entries/`, `GET delivery/content-types/{slug}/entries/{id}/` |
 | Health | `GET monitoring/health/` |
 
 Entry lists are cursor-paginated (50 per page, newest first). Example flow:
@@ -141,5 +165,24 @@ POST /api/organizations/1/content-types/1/versions/ {}
 # 4. Create entries, validated against the latest version
 POST /api/organizations/1/content-types/1/entries/  {"data": {"title": "Shirt", "price": 499}}
 ```
+
+### Delivery API
+
+External apps read an organization's content with a read-only API key instead of a login. Create a key in the app, then:
+
+```bash
+curl https://lattice-five-orcin.vercel.app/api/delivery/content-types/product/entries/ \
+  -H "Authorization: Bearer lat_<your key>"
+```
+
+Keys carry their organization, so the URL uses the content type's slug and no organization id. They are stored hashed (SHA-256), can be revoked, and are limited to 60 requests per minute each.
+
+## Known limitations
+
+- Rate-limit counters live in each Gunicorn worker's memory, so with several workers the effective limit is higher than configured. A shared cache (Redis) would fix this.
+- Access tokens last 15 minutes and refresh tokens 7 days; there is no server-side token revocation yet.
+- Forgot-password and GitHub/Google/Microsoft sign-in are shown in the UI as "coming soon" and are not implemented.
+- The free hosting tiers are slow to wake and have small CPUs: login and signup take 1-2 seconds because of password hashing.
+- There are no frontend tests yet, and entries cannot be filtered by field values.
 
 See [`API-Contract.md`](API-Contract.md) for exact request and response shapes and error formats.

@@ -300,7 +300,7 @@ export function AuthPage() {
                 <label className="font-mono text-sm font-medium text-neutral-900">Password</label>
                 {mode === "signin" && (
                   <span className="font-mono text-sm text-blue-600 cursor-not-allowed opacity-60" title="Not yet available">
-                    Forgot password?
+                    Forgot password? <span className="text-xs">(coming soon)</span>
                   </span>
                 )}
               </div>
@@ -349,13 +349,13 @@ export function AuthPage() {
 
           <div className="space-y-3">
             <Button variant="outline" className="w-full h-10" disabled title="Not yet available">
-              <GithubIcon /> <span className="ml-2">Continue with GitHub</span>
+              <GithubIcon /> <span className="ml-2">Continue with GitHub</span> <span className="ml-2 text-xs text-neutral-400">(coming soon)</span>
             </Button>
             <Button variant="outline" className="w-full h-10" disabled title="Not yet available">
-              <GoogleIcon /> <span className="ml-2">Continue with Google</span>
+              <GoogleIcon /> <span className="ml-2">Continue with Google</span> <span className="ml-2 text-xs text-neutral-400">(coming soon)</span>
             </Button>
             <Button variant="outline" className="w-full h-10" disabled title="Not yet available">
-              <MicrosoftIcon /> <span className="ml-2">Continue with Microsoft</span>
+              <MicrosoftIcon /> <span className="ml-2">Continue with Microsoft</span> <span className="ml-2 text-xs text-neutral-400">(coming soon)</span>
             </Button>
           </div>
 

@@ -179,7 +179,7 @@ def test_forwarded_header_is_ignored_when_no_proxy_is_configured(api_client):
 
 @pytest.mark.django_db
 def test_health_check_is_never_throttled(api_client):
-    # Azure polls this constantly from one address.
+    # Health probes and uptime monitors poll this constantly from one address.
     for _ in range(40):
         assert api_client.get("/api/monitoring/health/").status_code == 200
 
