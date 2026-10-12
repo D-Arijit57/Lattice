@@ -2,16 +2,32 @@
 
 [![CI](https://github.com/D-Arijit57/Lattice/actions/workflows/ci.yml/badge.svg)](https://github.com/D-Arijit57/Lattice/actions/workflows/ci.yml)
 
+A multi-tenant, headless content engine. Organizations define their own content types (Product, Event, Course, ...) at runtime by declaring fields, then create and read entries through a REST API. No code change or database migration is needed per content type.
+
 **Live demo:** https://lattice-five-orcin.vercel.app
 
-A composable, multi-tenant content engine. Organizations define their own content types (Product, Event, Course, ...) at runtime by declaring fields, then store and query entries through a REST API. No code change or database migration is needed per content type.
+## Contents
+
+- [How it works](#how-it-works)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [API reference](#api-reference)
+- [Architecture](#architecture)
+- [Testing and CI](#testing-and-ci)
+- [Deployment](#deployment)
+- [Security](#security)
+- [Project structure](#project-structure)
+- [Known limitations](#known-limitations)
 
 ## How it works
 
-- **Organizations** are isolated tenants. A user can belong to many organizations, and every request is scoped to one and checked against the caller's membership.
-- **Content types** describe a kind of content (`name`, `slug`) and own a set of **fields** (`string`, `number`, `boolean`, `date`, optionally required).
-- **Versions** are immutable JSON Schema snapshots generated from a content type's fields. Publishing a new version never alters an old one.
-- **Entries** hold the actual data as JSONB, are validated against the schema of the version they were created under, and stay pinned to that version.
+| Concept | What it is |
+|---|---|
+| **Organization** | An isolated tenant. A user can belong to many; every request is scoped to one and checked against the caller's membership. |
+| **Content type** | A kind of content (`name`, `slug`) that owns a set of **fields** (`string`, `number`, `boolean`, `date`, optionally required). |
+| **Version** | An immutable JSON Schema generated from a content type's fields. Publishing a new version never changes an old one. |
+| **Entry** | The actual data, stored as JSONB, validated against the schema of the version it was created under, and pinned to that version. |
+| **API key** | A read-only credential an organization issues so an outside app can fetch its content without a user login. |
 
 Validation errors are returned per field, all at once:
 
@@ -19,122 +35,66 @@ Validation errors are returned per field, all at once:
 { "data": { "price": ["Must be a number."], "sku": ["This field is required."] } }
 ```
 
-## Data model
+![Data model](docs/data-model.png)
 
-![Lattice data model](docs/data-model.png)
+`users` and `organizations` are many-to-many through `organization_memberships` (unique per user and organization). An organization owns `content_types` and `api_keys`; a content type owns `fields` and `content_type_versions`; an `entry` references a version, not the content type directly.
 
-- `users` and `organizations` are linked many-to-many through `organization_memberships`.
-- Each organization owns many `content_types`, and each content type owns many `fields`.
-- `content_type_versions` store the generated JSON Schema for a content type, numbered per content type.
-- `entries` keep their data as JSONB and reference a `content_type_version`, not the content type directly.
-- Each organization can issue `api_keys` - read-only credentials (`hashed_key`, revocable via `revoked_at`) that let an external app fetch that organization's content without a logged-in user.
+## Quick start
 
-## Tech stack
+Requirements: Python 3.11+, Node.js 18+ (CI uses 20), and a PostgreSQL database.
 
-| Layer | Tools |
-|---|---|
-| Backend | Python 3.11, Django 5.2, Django REST Framework, PostgreSQL, `jsonschema` |
-| Auth | JWT (`djangorestframework-simplejwt`) in httpOnly cookies |
-| Serving | Gunicorn |
-| Frontend | Vite, React 19, TypeScript, Tailwind CSS, React Router |
-| Tests / CI | pytest, pytest-django, GitHub Actions (Postgres service container) |
-| Hosting | Vercel (SPA + `/api` proxy function), Render (Docker, Singapore), Supabase Postgres (Singapore) |
-
-## Architecture and deployment
-
-```
-Browser -> Vercel (static SPA + api/proxy.ts function) -> Render (Docker, Gunicorn + Django) -> Supabase Postgres
-```
-
-- The browser only talks to one origin. Vercel serves the built SPA and rewrites every `/api/*` request to a small function (`frontend/api/proxy.ts`) that forwards it to the Render backend, including cookies. This keeps the httpOnly auth cookies first-party and removes the need for CORS in production.
-- The backend runs from `backend/Dockerfile`; the entrypoint applies migrations before Gunicorn starts. `render.yaml` describes the service, and secrets are entered in the Render dashboard rather than committed.
-- The backend and database are both in Singapore. Moving the backend next to the database, plus reusing Postgres connections (`DB_CONN_MAX_AGE`), cut the health-check latency from about 1.5 s to about 0.2 s.
-- `docker-compose.yml` and `frontend/nginx.conf` are for running the full stack locally; production does not use nginx.
-- An uptime monitor pings `GET /api/monitoring/health/` every 5 minutes, which keeps the free Render instance awake and the database active.
-- CI (`.github/workflows/ci.yml`) runs the backend tests against a throwaway Postgres container and type-checks and builds the frontend on every push and pull request. Vercel and Render deploy from `master` on their own.
-
-## Repository layout
-
-```
-backend/                  Django + DRF API
-frontend/                 Vite + React control plane
-frontend/api/proxy.ts     Vercel function that forwards /api/* to the backend
-.github/workflows/        CI (tests, type-check, build)
-render.yaml               Render service definition
-```
-
-## Getting started
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- A running PostgreSQL database
-
-### Backend
+**Backend**
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-
-cp .env.example .env        # then edit the values, see "Configuration"
+cp .env.example .env              # edit SECRET_KEY and DATABASE_URL
 python manage.py migrate
-python manage.py runserver  # http://localhost:8000
+python manage.py runserver        # http://localhost:8000
 ```
 
-To serve with Gunicorn instead of the dev server:
-
-```bash
-gunicorn content_engine.wsgi
-```
-
-### Frontend
+**Frontend**
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env
-npm run dev                 # http://localhost:3000
+cp .env.example .env              # VITE_API_BASE_URL=http://localhost:8000/api
+npm run dev                       # http://localhost:3000
 ```
 
-Other scripts: `npm run build`, `npm run preview`, `npm run lint` (type-check).
+Other frontend scripts: `npm run build`, `npm run preview`, `npm run lint` (type-check).
+
+**Full stack in Docker (optional).** `docker-compose.yml` builds the backend and an nginx container that serves the SPA on `http://localhost:8080` and proxies `/api` to the backend. It has no bundled database: copy the root `.env.example` to `.env` and set `DATABASE_URL` to a Postgres you can reach.
+
+```bash
+docker compose up --build
+```
 
 ## Configuration
 
-### Backend (`backend/.env`)
+**Backend** (`backend/.env`, or real environment variables in production)
 
 | Variable | Description |
 |---|---|
-| `SECRET_KEY` | Django secret key. Generate a unique value per environment. |
-| `DEBUG` | `True` for local development, `False` in production. With `False`, cookies are marked `Secure`. |
-| `ALLOWED_HOSTS` | Comma-separated list of hostnames the API will serve. |
-| `DATABASE_URL` | Postgres connection string, e.g. `postgres://user:password@localhost:5432/lattice`. |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated list of frontend origins allowed to call the API. |
-| `LOG_LEVEL` | Minimum level written to the logs: `DEBUG`, `INFO`, `WARNING` or `ERROR`. Defaults to `INFO`. |
-| `DB_CONN_MAX_AGE` | Seconds to keep a Postgres connection open between requests. Defaults to `0` (close after each request); set it (e.g. `60`) on a host where the database is remote. |
-| `NUM_PROXIES` | Number of reverse proxies in front of the API, used to find the real client IP for rate limiting. `0` for local development. |
+| `SECRET_KEY` | Django secret and JWT signing key. Required. Use a unique value of 32+ characters per environment. |
+| `DEBUG` | `True` for local development. Must be `False` in production: it turns on HTTPS redirect, `Secure` cookies and HSTS. Default `False`. |
+| `ALLOWED_HOSTS` | Comma-separated hostnames the API will serve, e.g. `localhost,127.0.0.1`. |
+| `DATABASE_URL` | Postgres URL, e.g. `postgres://user:password@localhost:5432/lattice`. Percent-encode special characters in the password. Required. |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated frontend origins. Needed only when the SPA and API are on different origins (local dev). |
+| `DB_CONN_MAX_AGE` | Seconds to keep a Postgres connection open between requests. Default `0`. Set it (e.g. `60`) when the database is remote; it avoids a connection handshake per request. |
+| `NUM_PROXIES` | Number of reverse proxies in front of Django, used to read the real client IP for rate limiting. `0` locally. |
+| `LOG_LEVEL` | `DEBUG`, `INFO` (default), `WARNING` or `ERROR`. Logs go to stdout. |
 
-### Frontend (`frontend/.env`)
+**Frontend** (`frontend/.env`)
 
 | Variable | Description |
 |---|---|
-| `VITE_API_BASE_URL` | Base URL of the API. `http://localhost:8000/api` in dev; `/api` (relative) in production, where the built SPA and the API share one host (see `frontend/.env.production.example`). Falls back to `/api` when unset. |
+| `VITE_API_BASE_URL` | API base URL. `http://localhost:8000/api` in development; `/api` in production, where the SPA and API share one origin. Falls back to `/api` if unset. Vite inlines it at build time. |
 
-## Running the tests
+## API reference
 
-```bash
-cd backend
-pip install -r requirements-dev.txt   # includes requirements.txt
-pytest
-```
-
-Tests run against a temporary Postgres database that Django creates and drops automatically. Point `DATABASE_URL` at a local Postgres rather than a hosted one: against a remote database the suite takes minutes instead of seconds. CI does this on every push.
-
-## API overview
-
-All routes are under `/api/`. Requests and responses are JSON. Authentication uses two httpOnly cookies set on login, so clients must send credentials with each request (`credentials: 'include'`).
+All routes are under `/api/`, use JSON, and return standard DRF error bodies (`{"detail": "..."}` or per-field errors). V1 exposes create and read operations (plus API key revoke); there is no update or delete for content.
 
 | Area | Endpoints |
 |---|---|
@@ -146,43 +106,121 @@ All routes are under `/api/`. Requests and responses are JSON. Authentication us
 | Entries | `GET, POST .../content-types/{ct}/entries/`, `GET .../entries/{id}/` |
 | API keys | `GET, POST organizations/{org}/api-keys/`, `DELETE organizations/{org}/api-keys/{id}/` (revoke) |
 | Delivery (API key) | `GET delivery/content-types/{slug}/entries/`, `GET delivery/content-types/{slug}/entries/{id}/` |
-| Health | `GET monitoring/health/` |
+| Health | `GET monitoring/health/` (runs `SELECT 1`; `200` healthy, `503` database unreachable) |
 
-Entry lists are cursor-paginated (50 per page, newest first). Example flow:
+Exact request and response shapes are in [`API-Contract.md`](API-Contract.md).
 
-```bash
-# 1. Create an organization, then a content type inside it
-POST /api/organizations/                        {"name": "Acme"}
-POST /api/organizations/1/content-types/        {"name": "Product", "slug": "product"}
+**Authentication.** `POST auth/login/` sets two httpOnly cookies: `access_token` (15 minutes, sent on every request) and `refresh_token` (7 days, scoped to `/api/auth/refresh/` only). Both are `SameSite=Lax` and `Secure` when `DEBUG=False`. Clients must send credentials (`fetch(..., { credentials: "include" })`). The bundled frontend retries a request once after a `401` by calling `auth/refresh/`.
 
-# 2. Define fields
-POST /api/organizations/1/content-types/1/fields/   {"name": "title", "data_type": "string", "required": true}
-POST /api/organizations/1/content-types/1/fields/   {"name": "price", "data_type": "number", "required": true}
+**Tenancy.** Organization-scoped routes check the caller's membership: a non-member gets `403`, an organization that does not exist gets `404`, and the organization list and detail routes only ever return organizations the caller belongs to.
 
-# 3. Publish a version (generates the JSON Schema from the fields)
-POST /api/organizations/1/content-types/1/versions/ {}
+**Pagination.** Entry lists use cursor pagination: 50 per page, newest first, stable under inserts. Follow the `next` URL in the response.
 
-# 4. Create entries, validated against the latest version
-POST /api/organizations/1/content-types/1/entries/  {"data": {"title": "Shirt", "price": 499}}
+**Example flow**
+
+```text
+POST /api/organizations/                            {"name": "Acme"}
+POST /api/organizations/1/content-types/            {"name": "Product", "slug": "product"}
+POST /api/organizations/1/content-types/1/fields/    {"name": "title", "data_type": "string", "required": true}
+POST /api/organizations/1/content-types/1/fields/    {"name": "price", "data_type": "number", "required": true}
+POST /api/organizations/1/content-types/1/versions/  {}        # generates the JSON Schema from the fields
+POST /api/organizations/1/content-types/1/entries/   {"data": {"title": "Shirt", "price": 499}}
 ```
 
-### Delivery API
+The generated schema for that content type:
 
-External apps read an organization's content with a read-only API key instead of a login. Create a key in the app, then:
+```json
+{
+  "type": "object",
+  "properties": { "title": { "type": "string" }, "price": { "type": "number" } },
+  "required": ["title", "price"],
+  "additionalProperties": false
+}
+```
+
+**Delivery API.** Create a key under an organization (the raw `lat_...` key is returned once, only its SHA-256 hash is stored), then read content without a login:
 
 ```bash
 curl https://lattice-five-orcin.vercel.app/api/delivery/content-types/product/entries/ \
   -H "Authorization: Bearer lat_<your key>"
 ```
 
-Keys carry their organization, so the URL uses the content type's slug and no organization id. They are stored hashed (SHA-256), can be revoked, and are limited to 60 requests per minute each.
+The key carries its organization, so the URL uses the content type slug and no organization id. Revoked keys are rejected.
+
+**Rate limits** (per minute): login 5, signup 5, token refresh 30, anonymous 30, authenticated user 100, delivery 60 per API key.
+
+## Architecture
+
+```text
+Browser ──> Vercel (static SPA + api/proxy.ts) ──> Render (Docker: Gunicorn + Django) ──> Supabase Postgres
+```
+
+- **Single origin.** The browser only talks to the Vercel domain. A rewrite sends every `/api/*` request to one function, `frontend/api/proxy.ts`, which forwards method, headers, body and `Set-Cookie` to the backend. This keeps the auth cookies first-party and removes CORS from production.
+- **Backend.** `backend/Dockerfile` runs `entrypoint.sh`, which applies migrations and then starts Gunicorn. Business rules live in `backend/content/services/` (schema generation, versioning, entry validation); DRF views and serializers in `backend/api/` stay thin.
+- **Database.** Postgres with JSONB for entries and database-level unique constraints for tenancy-sensitive tables.
+- **Region.** Backend, proxy function and database are all in Singapore. Moving the backend next to the database and reusing connections (`DB_CONN_MAX_AGE`) cut health-check latency from about 1.5 s to about 0.2 s.
+
+## Testing and CI
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+70 tests cover auth, tenancy checks, content types, fields, schema generation, versioning and entry validation. Django creates and drops a temporary test database. Use a **local** Postgres: against a hosted one the suite takes minutes instead of about 10 seconds.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
+
+- **backend:** Python 3.11, a `postgres:16` service container, `pytest`.
+- **frontend:** Node 20, `npm ci`, `npm run lint` (type-check), `npm run build`.
+
+## Deployment
+
+| Piece | Host | Notes |
+|---|---|---|
+| Frontend + `/api` proxy | Vercel | Root directory `frontend`. `vercel.json` pins the function region and rewrites `/api/*` to `api/proxy.ts`; all other paths fall back to `index.html`. |
+| Backend | Render (Docker, free) | Defined in `render.yaml`. Secrets are set in the Render dashboard, not committed. Health check path `/api/monitoring/health/`. |
+| Database | Supabase Postgres | Use the Session pooler URL for `DATABASE_URL`. |
+| Uptime | External monitor | Pings the health endpoint every 5 minutes so the free instance stays awake and the database stays active. |
+
+Production environment on Render: `SECRET_KEY`, `DATABASE_URL`, `ALLOWED_HOSTS` (the `*.onrender.com` host), `DEBUG=False`, `DB_CONN_MAX_AGE=60`, `NUM_PROXIES`. To move the backend to another host, change `BACKEND_ORIGIN` in `frontend/api/proxy.ts` and keep the same `SECRET_KEY` so existing sessions stay valid.
+
+Vercel and Render redeploy from `master` automatically.
+
+## Security
+
+- JWTs live only in httpOnly cookies; the refresh cookie is scoped to the refresh endpoint.
+- API keys are random (`secrets.token_urlsafe(32)`), stored as SHA-256 hashes, revocable, and read-only.
+- Membership checks on every organization-scoped route.
+- Throttling on auth, user and delivery routes; the health endpoint is exempt so probes are never rate limited.
+- With `DEBUG=False`: HTTPS redirect, `Secure` cookies and HSTS are enabled, and Django trusts `X-Forwarded-Proto` from the proxy.
+- Logs avoid credentials: a failed login records only the client IP, and no tokens, cookies or request bodies are logged.
+
+## Project structure
+
+```text
+backend/
+  content_engine/    Django settings, root URLs, WSGI
+  accounts/          User, Organization, OrganizationMembership, APIKey models
+  content/           ContentType, Field, ContentTypeVersion, Entry models
+  content/services/  schema_generation, versioning, entry_validation
+  api/               DRF views, serializers, URLs: auth, accounts, content, delivery, monitoring
+frontend/
+  src/               React app (pages, components, lib/api.ts client)
+  api/proxy.ts       Vercel function forwarding /api/* to the backend
+  vercel.json        Rewrites and function region
+docs/                Data model diagram
+.github/workflows/   CI
+render.yaml          Render service definition
+docker-compose.yml   Local full-stack run
+```
 
 ## Known limitations
 
 - Rate-limit counters live in each Gunicorn worker's memory, so with several workers the effective limit is higher than configured. A shared cache (Redis) would fix this.
-- Access tokens last 15 minutes and refresh tokens 7 days; there is no server-side token revocation yet.
-- Forgot-password and GitHub/Google/Microsoft sign-in are shown in the UI as "coming soon" and are not implemented.
-- The free hosting tiers are slow to wake and have small CPUs: login and signup take 1-2 seconds because of password hashing.
-- There are no frontend tests yet, and entries cannot be filtered by field values.
-
-See [`API-Contract.md`](API-Contract.md) for exact request and response shapes and error formats.
+- No server-side token revocation yet: a leaked access token stays valid until it expires (15 minutes).
+- Forgot-password and GitHub/Google/Microsoft sign-in appear in the UI as "coming soon" and are not implemented.
+- Entries cannot be filtered or searched by field values, and content cannot be updated or deleted in V1.
+- API keys and the delivery API have no automated tests yet, and neither does the frontend.
+- On the free hosting tiers the CPU is small, so login and signup take 1-2 seconds because of password hashing.
