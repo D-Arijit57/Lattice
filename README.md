@@ -161,7 +161,7 @@ curl https://lattice-five-orcin.vercel.app/api/delivery/content-types/product/en
 
 The key carries its organization, so the URL uses the content type slug and no organization id. Revoked keys are rejected.
 
-**Rate limits** (per minute): login 5, signup 5, token refresh 30, anonymous 30, authenticated user 100, delivery 60 per API key.
+**Rate limits** (per minute): login 5, signup 5, token refresh 30, authenticated user 100. Delivery requests are limited to 30 per client IP (the anonymous scope, because API-key requests have no user) and 60 per API key; in practice the per-IP limit is reached first.
 
 ## Architecture
 
@@ -182,7 +182,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-70 tests cover auth, tenancy checks, content types, fields, schema generation, versioning and entry validation. Django creates and drops a temporary test database. Use a **local** Postgres: against a hosted one the suite takes minutes instead of about 10 seconds.
+100 tests cover auth, tenancy checks, content types, fields, schema generation, versioning, entry validation, API key management and the delivery API. Django creates and drops a temporary test database. Use a **local** Postgres: against a hosted one the suite takes minutes instead of about 10 seconds.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
 
@@ -236,5 +236,5 @@ docker-compose.yml   Local full-stack run
 - No server-side token revocation yet: a leaked access token stays valid until it expires (15 minutes).
 - Forgot-password and GitHub/Google/Microsoft sign-in appear in the UI as "coming soon" and are not implemented.
 - Entries cannot be filtered or searched by field values, and content cannot be updated or deleted in V1.
-- API keys and the delivery API have no automated tests yet, and neither does the frontend.
+- The frontend has no automated tests yet.
 - On the free hosting tiers the CPU is small, so login and signup take 1-2 seconds because of password hashing.
