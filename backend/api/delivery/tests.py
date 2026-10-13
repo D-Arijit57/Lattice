@@ -6,6 +6,8 @@ a user login. The key carries its organization, so these tests focus on
 authentication outcomes, tenant isolation, and being read-only.
 """
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -243,3 +245,51 @@ def test_rate_limit_is_per_key_not_per_ip(api_client, acme, globex):
     assert api_client.get(_list_url(), **_auth(RAW_KEY)).status_code == 429
 
     assert api_client.get(_list_url(), **_auth(OTHER_RAW_KEY)).status_code == 200
+
+
+# --- query count ---
+
+@pytest.mark.django_db
+def test_list_query_count_does_not_grow_with_the_number_of_entries(api_client, acme):
+    # EntrySerializer reads content_type_version.version_number for every row.
+    # Without select_related that is one extra query per entry (N+1).
+    _, _, content_type, _ = acme
+
+    def queries_for_list():
+        with CaptureQueriesContext(connection) as captured:
+            response = api_client.get(_list_url(), **_auth(RAW_KEY))
+        assert response.status_code == 200
+        return len(captured), len(response.data["results"])
+
+    few_queries, few_rows = queries_for_list()
+    version = content_type.versions.first()
+    for i in range(10):
+        Entry.objects.create(content_type_version=version, data={"title": f"Extra {i}"})
+    many_queries, many_rows = queries_for_list()
+
+    assert many_rows > few_rows
+    assert many_queries == few_queries
+
+
+# --- Entry.content_type stays in sync with its version ---
+
+@pytest.mark.django_db
+def test_entry_content_type_is_derived_from_its_version(acme):
+    _, _, content_type, entries = acme
+
+    assert all(entry.content_type_id == content_type.id for entry in entries)
+
+
+@pytest.mark.django_db
+def test_list_includes_entries_from_every_version_of_the_content_type(api_client, acme):
+    # The list spans all versions; filtering on Entry.content_type must not
+    # narrow it to the latest one.
+    _, _, content_type, _ = acme
+    Field.objects.create(content_type=content_type, name="price", data_type="number", required=False)
+    version_two = create_content_type_version(content_type=content_type)
+    Entry.objects.create(content_type_version=version_two, data={"title": "Coat"})
+
+    response = api_client.get(_list_url(), **_auth(RAW_KEY))
+
+    titles = sorted(row["data"]["title"] for row in response.data["results"])
+    assert titles == ["Coat", "Hat", "Shirt"]

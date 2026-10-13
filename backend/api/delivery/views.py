@@ -31,7 +31,10 @@ class DeliveryEntryViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vie
         return self._content_type
     
     def get_queryset(self):
-        return Entry.objects.filter(
-            content_type_version__content_type = self.get_content_type()
-        ).order_by("-created_at","-id")
+        return (
+            Entry.objects
+            .filter(content_type=self.get_content_type())
+            .select_related("content_type_version")
+            .order_by("-created_at", "-id")
+        )
     

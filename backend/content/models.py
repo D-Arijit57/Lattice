@@ -57,9 +57,37 @@ class Entry(models.Model):
         on_delete=models.PROTECT,
         related_name="entries",
     )
+    # Denormalized copy of content_type_version.content_type, kept in sync by
+    # save(). It exists so "newest entries of a content type" can filter on one
+    # column of this table; going through the version needs a join, which stops
+    # Postgres from reading the index in sorted order (see the index below).
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.PROTECT,
+        related_name="entries",
+        editable=False,
+    )
     data = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            # Serves "newest entries of a content type": filter on content_type,
+            # then read rows already sorted created_at DESC, id DESC, so a list
+            # page reads ~51 index entries instead of scanning and sorting the
+            # table. Must mirror EntryCursorPagination.ordering.
+            models.Index(
+                fields=["content_type", "-created_at", "-id"],
+                name="entry_ct_newest_idx",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        # Always derive it from the version so the two can never disagree.
+        # bulk_create() skips save(): callers using it must set content_type.
+        self.content_type_id = self.content_type_version.content_type_id
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Entry #{self.id} ({self.content_type_version.content_type})"
