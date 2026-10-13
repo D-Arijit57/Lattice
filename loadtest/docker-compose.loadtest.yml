@@ -1,0 +1,45 @@
+# Isolated stack for load testing: its own Postgres 16 (same major as CI) and
+# the real backend image. Deliberately has NO env_file and does not read the
+# repo's .env, so it can never touch the Supabase production database.
+#
+#   WEB_CONCURRENCY=4 docker compose -f loadtest/docker-compose.loadtest.yml up -d --build
+name: lattice-loadtest
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lattice
+      POSTGRES_PASSWORD: lattice
+      POSTGRES_DB: lattice
+    ports:
+      - "55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lattice"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    build: ../backend
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/loadtest
+    environment:
+      SECRET_KEY: loadtest-only-not-a-real-secret
+      DEBUG: "False"
+      ALLOWED_HOSTS: "*"
+      DATABASE_URL: postgres://lattice:lattice@db:5432/lattice
+      DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
+      # gunicorn reads WEB_CONCURRENCY as its worker count (default 1, as shipped)
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      GUNICORN_CMD_ARGS: ${GUNICORN_CMD_ARGS:-}
+      LOG_LEVEL: WARNING
+
+volumes:
+  pgdata:

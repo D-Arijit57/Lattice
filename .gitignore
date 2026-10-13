@@ -14,3 +14,6 @@ API_Contract.md
 .env*
 !.env.example
 knowledge_transfer.md
+loadtest/keys.txt
+loadtest/meta.json
+loadtest/results/*.log
