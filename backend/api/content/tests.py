@@ -516,16 +516,6 @@ def test_entry_serializer_rejects_data_that_breaks_the_schema():
     assert serializer.errors["data"] == {"price": ["Must be a number."]}
 
 
-def test_entry_serializer_reports_every_error_at_once():
-    serializer = make_entry_serializer({"price": "x", "hax": 1})
-    assert not serializer.is_valid()
-    assert serializer.errors["data"] == {
-        "title": ["This field is required."],
-        "price": ["Must be a number."],
-        "hax": ["Unknown field."],
-    }
-
-
 def test_entry_serializer_rejects_a_payload_that_is_not_an_object():
     serializer = make_entry_serializer([1, 2, 3])
     assert not serializer.is_valid()

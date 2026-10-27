@@ -119,7 +119,7 @@ All routes are under `/api/`, use JSON, and return standard DRF error bodies (`{
 | Versions | `GET, POST .../content-types/{ct}/versions/`, `GET .../versions/{id}/` |
 | Entries | `GET, POST .../content-types/{ct}/entries/`, `GET .../entries/{id}/` |
 | API keys | `GET, POST organizations/{org}/api-keys/`, `DELETE organizations/{org}/api-keys/{id}/` (revoke) |
-| Delivery (API key) | `GET delivery/content-types/{slug}/entries/`, `GET delivery/content-types/{slug}/entries/{id}/` |
+| Delivery (API key) | `GET delivery/content-types/` (discover), `GET delivery/content-types/{slug}/` (latest fields), `GET delivery/content-types/{slug}/entries/`, `GET delivery/content-types/{slug}/entries/{id}/` |
 | Health | `GET monitoring/health/` (runs `SELECT 1`; `200` healthy, `503` database unreachable) |
 
 Exact request and response shapes are in [`API-Contract.md`](API-Contract.md).
@@ -160,6 +160,8 @@ curl https://lattice-five-orcin.vercel.app/api/delivery/content-types/product/en
 ```
 
 The key carries its organization, so the URL uses the content type slug and no organization id. Revoked keys are rejected.
+
+Consumers can discover what to read: `GET /api/delivery/content-types/` returns `[{name, slug}]` for the key's organization, and `GET /api/delivery/content-types/<slug>/` returns `{name, slug, version_number, fields: [{name, data_type, required}]}` from the latest published version (`fields` is empty and `version_number` null if none is published). Both are read-only and use the same key, throttle and org scoping.
 
 **Rate limits** (per minute): login 5, signup 5, token refresh 30, authenticated user 100, delivery 60 per API key.
 

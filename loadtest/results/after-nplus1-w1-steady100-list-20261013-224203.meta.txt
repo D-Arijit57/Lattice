@@ -1,0 +1,7 @@
+git_sha=d92f84e dirty=2
+machine=Apple M1 cores=8 ram_gb=16
+k6=k6 v2.3.0 (commit/devel, go1.27.1, darwin/arm64)
+workers=1 gunicorn_args=
+docker=cpus=8 mem_bytes=8319770624
+dataset={"slug": "product", "min_id": 1, "max_id": 100000, "entries": 100000, "keys": 2000}
+scenario=list args=-e MODE=steady -e RATE=100 -e DURATION=45s
