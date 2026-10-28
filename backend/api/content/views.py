@@ -9,6 +9,8 @@ from api.content.serializers import ContentTypeVersionSerializer
 from api.content.serializers import EntrySerializer
 from api.content.serializers import FieldSerializer
 from api.content.pagination import EntryCursorPagination
+from django.db import transaction
+from django.db.models import Max
 
 
 class OrganizationScopedViewSet(
@@ -228,6 +230,41 @@ class EntryViewSet(ContentTypeScopedViewSet):
             .select_related("content_type_version")
             .order_by("-created_at", "-id")
         )
+
+    def perform_create(self, serializer):
+        # while you perform the creation always use atomicity
+        with transaction.atomic():
+            # lock the content type
+            # select_for_update() lives on the queryset (ContentType.objects),
+            # not on the view, so we re-fetch the row we already resolved,
+            # this time locked: a concurrent create for the same content type
+            # waits here until this transaction commits or rolls back
+            locked_content_type = ContentType.objects.select_for_update().get(
+                pk=self.get_content_type().pk
+            )
+
+            # get the max number then + 1
+            # Max() returns None when this content type has no entries yet,
+            # hence the "or 0". This stays inside the with-block: the lock is
+            # released when the block ends, so the read and the insert below
+            # must both happen while we still hold it.
+            last_sequence_number = Entry.objects.filter(
+                content_type=locked_content_type
+            ).aggregate(Max("number"))["number__max"]
+            next_sequence_number = (last_sequence_number or 0) + 1
+
+            # validated_data holds content_type_version (HiddenField, filled
+            # from context) and data; Entry.save() derives content_type from
+            # the version, so we don't pass it here
+            entry = Entry.objects.create(
+                content_type_version=serializer.validated_data["content_type_version"],
+                data=serializer.validated_data["data"],
+                number=next_sequence_number,
+            )
+
+        # we skipped serializer.save(), so tell the serializer which object
+        # was created - the 201 response is built from serializer.data
+        serializer.instance = entry
 
     def get_serializer_context(self):
         context = super().get_serializer_context()

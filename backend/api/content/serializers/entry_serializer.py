@@ -44,6 +44,7 @@ class EntrySerializer(serializers.ModelSerializer):
         model = Entry
         fields = [
             "id",
+            "number",
             "content_type_version",
             "content_type_version_id",
             "version_number",
@@ -51,4 +52,4 @@ class EntrySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "number", "created_at", "updated_at"]

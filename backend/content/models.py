@@ -67,6 +67,10 @@ class Entry(models.Model):
         related_name="entries",
         editable=False,
     )
+    # Per-content-type sequence (1, 2, 3...), assigned under a lock in
+    # EntryViewSet.perform_create. Nullable only until the backfill migration
+    # has numbered existing rows; made NOT NULL + unique afterwards.
+    number = models.PositiveIntegerField(null=True, editable=False)
     data = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
