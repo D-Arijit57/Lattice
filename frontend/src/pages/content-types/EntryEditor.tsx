@@ -142,14 +142,14 @@ export function EntryEditor() {
         <ChevronRight className="w-4 h-4 mx-1" />
         <Link to={`${basePath}/entries`} className="hover:text-neutral-900 transition-colors">Entries</Link>
         <ChevronRight className="w-4 h-4 mx-1" />
-        <span className="text-neutral-900 font-mono font-medium">{isNew ? "new" : `#${entryId}`}</span>
+        <span className="text-neutral-900 font-mono font-medium">{isNew ? "new" : `#${existing?.number ?? entryId}`}</span>
       </div>
 
       <div className="flex items-start justify-between mb-8">
         <div>
           <div className="flex items-center gap-3 mb-2">
             <h2 className="text-3xl font-bold tracking-tight text-neutral-900">
-              {isNew ? "New entry" : `Entry #${entryId}`}
+              {isNew ? "New entry" : `Entry #${existing?.number ?? entryId}`}
             </h2>
             {version && <Badge variant="secondary" className="font-mono">v{version.version_number}</Badge>}
           </div>

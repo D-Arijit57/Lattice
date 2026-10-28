@@ -117,7 +117,7 @@ export function EntriesList() {
                 <TableRow key={entry.id}>
                   <TableCell className="font-mono text-sm">
                     <Link to={`${basePath}/entries/${entry.id}`} className="text-blue-600 hover:underline">
-                      #{entry.id}
+                      #{entry.number}
                     </Link>
                   </TableCell>
                   {columns.map((name) => (

@@ -52,6 +52,9 @@ export type ContentTypeVersion = {
 
 export type Entry = {
   id: number;
+  // Per-content-type sequence (1, 2, 3...). `id` is the global database id:
+  // use it for URLs and keys, and `number` for anything the user reads.
+  number: number;
   content_type_version_id: number;
   version_number: number;
   data: Record<string, unknown>;
