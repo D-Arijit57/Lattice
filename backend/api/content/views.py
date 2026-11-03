@@ -232,7 +232,7 @@ class EntryViewSet(ContentTypeScopedViewSet):
             .filter(content_type=content_type)
             .select_related("content_type_version")
             .order_by("-created_at", "-id")
-        )
+            )
     def perform_create(self, serializer):
         # while you perform the creation always use atomicity
         with transaction.atomic():
