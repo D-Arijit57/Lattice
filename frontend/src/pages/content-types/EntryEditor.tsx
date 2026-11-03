@@ -7,34 +7,10 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { entries, errorMessage, fieldErrors, versions } from "@/lib/api"
-import { kindOf } from "@/lib/entry-fields"
+import { buildPayload, kindOf } from "@/lib/entry-fields"
 import { useApi } from "@/lib/use-api"
 import { useContentTypeFromSlug, useOrgId, useOrgPath } from "@/lib/use-org"
 import { formatDateTime } from "@/lib/utils"
-import type { SchemaProperty } from "@/types"
-
-// Turns what the user typed into the object the API expects, following the
-// schema: numbers become numbers, empty optional inputs are left out.
-function buildPayload(
-  properties: Record<string, SchemaProperty>,
-  values: Record<string, string | boolean>,
-) {
-  const data: Record<string, unknown> = {}
-  for (const [name, property] of Object.entries(properties)) {
-    const value = values[name]
-    const kind = kindOf(property)
-    if (kind === "boolean") {
-      data[name] = value === true
-    } else if (value === undefined || value === "") {
-      continue
-    } else if (kind === "number") {
-      data[name] = Number(value)
-    } else {
-      data[name] = value
-    }
-  }
-  return data
-}
 
 // One page, two modes:
 //   /entries/new        -> a form built from the newest schema version

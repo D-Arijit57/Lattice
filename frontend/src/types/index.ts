@@ -69,6 +69,19 @@ export type EntryPage = {
   results: Entry[];
 };
 
+// POST .../entries/bulk/ is all-or-nothing: a success saves every row, a 400
+// saves none and lists the bad rows. `row` is the 0-based index into the
+// array that was sent.
+export type BulkCreateResult = {
+  created: number;
+  entries: Entry[];
+};
+
+export type BulkEntryError = {
+  row: number;
+  data: Record<string, string[]>;
+};
+
 // What GET/POST/DELETE /organizations/{org}/api-keys/ return. The backend
 // serializer only exposes these four fields - hashed_key never leaves the
 // server, so it has no business in this type either.

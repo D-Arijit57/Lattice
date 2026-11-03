@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { Plus } from "lucide-react"
+import { Plus, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ImportEntriesDialog } from "@/components/forms/ImportEntriesDialog"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
@@ -34,11 +35,14 @@ export function EntriesList() {
   const [laterCursor, setLaterCursor] = useState<string | null | undefined>(undefined)
   const [loadingMore, setLoadingMore] = useState(false)
   const [moreError, setMoreError] = useState<string | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importedCount, setImportedCount] = useState<number | null>(null)
 
   // Switching to another content type starts the list over.
   useEffect(() => {
     setMoreRows([])
     setLaterCursor(undefined)
+    setImportedCount(null)
   }, [contentType.id])
 
   const rows = [...(firstPage.data?.results ?? []), ...moreRows]
@@ -56,6 +60,16 @@ export function EntriesList() {
     } finally {
       setLoadingMore(false)
     }
+  }
+
+  // Newest entries come first, so after an import start the list over from
+  // page one instead of appending to what was already loaded.
+  function handleImported(count: number) {
+    setImportOpen(false)
+    setImportedCount(count)
+    setMoreRows([])
+    setLaterCursor(undefined)
+    firstPage.reload()
   }
 
   if (versionList.loading || firstPage.loading) return <LoadingState />
@@ -77,11 +91,34 @@ export function EntriesList() {
           </Badge>
         </div>
         {latest && (
-          <Button asChild>
-            <Link to={`${basePath}/entries/new`}><Plus className="w-4 h-4 mr-2" /> New entry</Link>
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" className="bg-white" onClick={() => setImportOpen(true)}>
+              <Upload className="w-4 h-4 mr-2" /> Import CSV
+            </Button>
+            <Button asChild>
+              <Link to={`${basePath}/entries/new`}><Plus className="w-4 h-4 mr-2" /> New entry</Link>
+            </Button>
+          </div>
         )}
       </div>
+
+      {importedCount != null && (
+        <p className="mb-6 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          Imported {importedCount} {importedCount === 1 ? "entry" : "entries"}.
+        </p>
+      )}
+
+      {latest && (
+        <ImportEntriesDialog
+          orgId={orgId}
+          contentTypeId={contentType.id}
+          contentTypeSlug={contentType.slug}
+          schema={latest.schema}
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onImported={handleImported}
+        />
+      )}
 
       {!latest ? (
         <div className="bg-white border border-neutral-200 shadow-sm rounded-xl">

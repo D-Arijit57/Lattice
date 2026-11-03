@@ -1,6 +1,8 @@
 import type {
   APIKey,
   APIKeyCreated,
+  BulkCreateResult,
+  BulkEntryError,
   ContentType,
   ContentTypeVersion,
   Entry,
@@ -124,6 +126,14 @@ export function fieldErrors(error: unknown, key = 'data'): Record<string, string
   return {};
 }
 
+// A rejected bulk create arrives as {"errors": [{"row": 3, "data": {"price": ["..."]}}]}.
+// Returns those rows; empty when the error has no per-row part.
+export function rowErrors(error: unknown): BulkEntryError[] {
+  if (!(error instanceof ApiError)) return [];
+  const list = (error.body as { errors?: unknown } | null)?.errors;
+  return Array.isArray(list) ? (list as BulkEntryError[]) : [];
+}
+
 // `next` is an absolute URL built from the request host, which can be wrong
 // behind a proxy (API-Contract.md surprise 10). Only the cursor is needed, so
 // take just that and always call our own base URL.
@@ -233,5 +243,12 @@ export const entries = {
     request<Entry>(`${inContentType(orgId, ctId)}/entries/`, {
       method: 'POST',
       body: JSON.stringify({ data }),
+    }),
+
+  // Each item of `rows` is one entry's `data`. All rows are saved or none are.
+  bulkCreate: (orgId: number, ctId: number, rows: Record<string, unknown>[]) =>
+    request<BulkCreateResult>(`${inContentType(orgId, ctId)}/entries/bulk/`, {
+      method: 'POST',
+      body: JSON.stringify({ entries: rows }),
     }),
 };
