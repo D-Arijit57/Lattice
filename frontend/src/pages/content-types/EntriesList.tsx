@@ -18,6 +18,9 @@ import { useContentType } from "./ContentTypeWorkspace"
 // more; the rest are on the entry's own page.
 const MAX_DATA_COLUMNS = 4
 
+// CSV import needs the backend's bulk endpoint; off unless the build opts in.
+const BULK_IMPORT_ENABLED = import.meta.env.VITE_ENABLE_BULK_IMPORT === "true"
+
 export function EntriesList() {
   const contentType = useContentType()
   const orgId = useOrgId()
@@ -92,9 +95,11 @@ export function EntriesList() {
         </div>
         {latest && (
           <div className="flex items-center gap-3">
-            <Button variant="outline" className="bg-white" onClick={() => setImportOpen(true)}>
-              <Upload className="w-4 h-4 mr-2" /> Import CSV
-            </Button>
+            {BULK_IMPORT_ENABLED && (
+              <Button variant="outline" className="bg-white" onClick={() => setImportOpen(true)}>
+                <Upload className="w-4 h-4 mr-2" /> Import CSV
+              </Button>
+            )}
             <Button asChild>
               <Link to={`${basePath}/entries/new`}><Plus className="w-4 h-4 mr-2" /> New entry</Link>
             </Button>
@@ -108,7 +113,7 @@ export function EntriesList() {
         </p>
       )}
 
-      {latest && (
+      {latest && BULK_IMPORT_ENABLED && (
         <ImportEntriesDialog
           orgId={orgId}
           contentTypeId={contentType.id}
