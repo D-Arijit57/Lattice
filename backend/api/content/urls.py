@@ -23,6 +23,7 @@ version_detail = ContentTypeVersionViewSet.as_view({"get": "retrieve"})
 
 entry_list = EntryViewSet.as_view({"get": "list", "post": "create"})
 entry_detail = EntryViewSet.as_view({"get": "retrieve"})
+entry_bulk_create = EntryViewSet.as_view({"post": "bulk_create"})
 
 field_list = FieldViewSet.as_view({"get": "list", "post": "create"})
 field_detail = FieldViewSet.as_view({"get": "retrieve"})
@@ -52,6 +53,11 @@ urlpatterns = [
         "organizations/<int:organization_id>/content-types/<int:content_type_id>/entries/",
         entry_list,
         name="entry-list",
+    ),
+    path(
+        "organizations/<int:organization_id>/content-types/<int:content_type_id>/entries/bulk/",
+        entry_bulk_create,
+        name="entry-bulk-create",
     ),
     path(
         "organizations/<int:organization_id>/content-types/<int:content_type_id>/entries/<int:pk>/",

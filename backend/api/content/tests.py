@@ -2,7 +2,7 @@ import pytest
 from django.urls import reverse
 
 from accounts.models import Organization, OrganizationMembership
-from api.content.serializers import EntrySerializer
+from api.content.serializers import MAX_BULK_ENTRIES, EntrySerializer
 from content.models import ContentType, ContentTypeVersion, Entry, Field
 from content.services.entry_validation import NON_FIELD_ERRORS
 from content.services.versioning import create_content_type_version
@@ -651,3 +651,145 @@ def test_entry_endpoint_uses_the_new_schema_once_a_version_is_republished(
     )
     assert response.status_code == 201
     assert Entry.objects.get(id=response.data["id"]).content_type_version == version_two
+
+
+# --- Bulk entry endpoint -----------------------------------------------------
+# POST .../entries/bulk/ is all-or-nothing: either every row is saved, or a 400
+# lists the bad rows by 0-based index and nothing is saved. These reuse
+# product_setup (title: string, price: number, both required).
+
+def bulk_url(organization, content_type):
+    return reverse("entry-bulk-create", args=[organization.id, content_type.id])
+
+
+def product_rows(count):
+    return [{"title": f"Item {i}", "price": i} for i in range(count)]
+
+
+@pytest.mark.django_db
+def test_bulk_create_saves_every_row_and_numbers_them_in_order(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    api_client.force_authenticate(user=user)
+    rows = product_rows(3)
+
+    response = api_client.post(bulk_url(organization, content_type), {"entries": rows}, format="json")
+
+    assert response.status_code == 201
+    assert response.data["created"] == 3
+    assert [e["data"] for e in response.data["entries"]] == rows
+    assert [e["number"] for e in response.data["entries"]] == [1, 2, 3]
+    # every id is real (bulk_create had to hand them back) and pinned to the version
+    saved = Entry.objects.filter(content_type=content_type).order_by("number")
+    assert [e.id for e in saved] == [e["id"] for e in response.data["entries"]]
+    assert all(e.content_type_version == version for e in saved)
+
+
+@pytest.mark.django_db
+def test_bulk_create_continues_numbering_after_existing_entries(api_client, user, product_setup):
+    organization, content_type, _ = product_setup
+    api_client.force_authenticate(user=user)
+    single = api_client.post(
+        reverse("entry-list", args=[organization.id, content_type.id]),
+        {"data": {"title": "First", "price": 1}},
+        format="json",
+    )
+    assert single.data["number"] == 1
+
+    response = api_client.post(bulk_url(organization, content_type), {"entries": product_rows(2)}, format="json")
+
+    assert [e["number"] for e in response.data["entries"]] == [2, 3]
+
+
+@pytest.mark.django_db
+def test_bulk_create_rejects_the_whole_batch_and_names_the_bad_rows(api_client, user, product_setup):
+    organization, content_type, _ = product_setup
+    api_client.force_authenticate(user=user)
+    rows = [
+        {"title": "ok", "price": 1},
+        {"title": "bad type", "price": "banana"},
+        {"title": "ok too", "price": 2},
+        {"price": 3, "hax": True},
+    ]
+
+    response = api_client.post(bulk_url(organization, content_type), {"entries": rows}, format="json")
+
+    assert response.status_code == 400
+    assert response.data["errors"] == [
+        {"row": 1, "data": {"price": ["Must be a number."]}},
+        {"row": 3, "data": {"title": ["This field is required."], "hax": ["Unknown field."]}},
+    ]
+    # the valid rows must not have been saved either
+    assert Entry.objects.count() == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("body", [{}, {"entries": []}, {"entries": "nope"}, {"entries": ["not an object"]}])
+def test_bulk_create_rejects_a_malformed_body(api_client, user, product_setup, body):
+    organization, content_type, _ = product_setup
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post(bulk_url(organization, content_type), body, format="json")
+
+    assert response.status_code == 400
+    assert Entry.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_bulk_create_enforces_the_row_cap(api_client, user, product_setup):
+    organization, content_type, _ = product_setup
+    api_client.force_authenticate(user=user)
+    url = bulk_url(organization, content_type)
+
+    over = api_client.post(url, {"entries": product_rows(MAX_BULK_ENTRIES + 1)}, format="json")
+    at_cap = api_client.post(url, {"entries": product_rows(MAX_BULK_ENTRIES)}, format="json")
+
+    assert over.status_code == 400
+    assert at_cap.status_code == 201
+    assert Entry.objects.count() == MAX_BULK_ENTRIES
+
+
+@pytest.mark.django_db
+def test_bulk_create_fails_when_no_version_exists(api_client, user, member_org):
+    content_type = ContentType.objects.create(organization=member_org, name="Event", slug="event")
+    Field.objects.create(content_type=content_type, name="title", data_type="string", required=True)
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post(bulk_url(member_org, content_type), {"entries": [{"title": "x"}]}, format="json")
+
+    assert response.status_code == 404
+    assert Entry.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_bulk_create_requires_authentication(api_client, product_setup):
+    organization, content_type, _ = product_setup
+
+    response = api_client.post(bulk_url(organization, content_type), {"entries": product_rows(1)}, format="json")
+
+    assert response.status_code == 401
+    assert Entry.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_bulk_create_forbidden_for_a_non_member(api_client, user, product_setup):
+    organization, content_type, _ = product_setup
+    OrganizationMembership.objects.filter(user=user, organization=organization).delete()
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post(bulk_url(organization, content_type), {"entries": product_rows(1)}, format="json")
+
+    assert response.status_code == 403
+    assert Entry.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_bulk_create_under_another_orgs_content_type_returns_404(api_client, user, product_setup):
+    organization, _, _ = product_setup
+    stranger_org = Organization.objects.create(name="Elsewhere")
+    foreign_type = ContentType.objects.create(organization=stranger_org, name="Product", slug="product")
+    api_client.force_authenticate(user=user)
+
+    response = api_client.post(bulk_url(organization, foreign_type), {"entries": product_rows(1)}, format="json")
+
+    assert response.status_code == 404
+    assert Entry.objects.count() == 0

@@ -1,4 +1,9 @@
 from api.content.serializers.content_type import ContentTypeSerializer, CurrentOrganizationDefault
 from api.content.serializers.content_type_version import ContentTypeVersionSerializer, CurrentContentTypeDefault
-from api.content.serializers.entry_serializer import EntrySerializer, CurrentContentTypeVersionDefault
+from api.content.serializers.entry_serializer import (
+    MAX_BULK_ENTRIES,
+    BulkEntrySerializer,
+    CurrentContentTypeVersionDefault,
+    EntrySerializer,
+)
 from api.content.serializers.field_serializer import FieldSerializer

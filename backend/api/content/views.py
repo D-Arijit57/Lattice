@@ -1,9 +1,12 @@
-from rest_framework import mixins, permissions, viewsets
+from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.response import Response
 
 from accounts.models import Organization, OrganizationMembership
 from content.models import ContentType, ContentTypeVersion, Entry, Field
+from content.services.entry_validation import validate_entry_data
 
+from api.content.serializers import BulkEntrySerializer
 from api.content.serializers import ContentTypeSerializer
 from api.content.serializers import ContentTypeVersionSerializer
 from api.content.serializers import EntrySerializer
@@ -230,7 +233,6 @@ class EntryViewSet(ContentTypeScopedViewSet):
             .select_related("content_type_version")
             .order_by("-created_at", "-id")
         )
-
     def perform_create(self, serializer):
         # while you perform the creation always use atomicity
         with transaction.atomic():
@@ -266,21 +268,86 @@ class EntryViewSet(ContentTypeScopedViewSet):
         # was created - the 201 response is built from serializer.data
         serializer.instance = entry
 
+    def get_latest_version(self):
+        latest_version = (
+            ContentTypeVersion.objects
+            .filter(content_type=self.get_content_type())
+            # -version_number : - is django orm syntax for descending order
+            # since we want to get the latest version
+            .order_by("-version_number")
+            .first()
+        )
+        if latest_version is None:
+            raise NotFound("This content type has no versions yet.")
+        return latest_version
+
     def get_serializer_context(self):
         context = super().get_serializer_context()
         # Only a create needs a target version; list / retrieve do not.
         if self.action == "create":
-            latest_version = (
-                ContentTypeVersion.objects
-                .filter(content_type=self.get_content_type())
-                # -version_number : - is django orm syntax for descending order
-                # since we want to get the latest version 
-                .order_by("-version_number")
-                .first()
-            )
-            if latest_version is None:
-                raise NotFound("This content type has no versions yet.")
             # EntrySerializer.content_type_version is a HiddenField whose
             # default (CurrentContentTypeVersionDefault) reads this key.
-            context["content_type_version"] = latest_version
+            context["content_type_version"] = self.get_latest_version()
         return context
+
+    def bulk_create(self, request, *args, **kwargs):
+        """
+        POST .../content-types/<ct>/entries/bulk/   body: {"entries": [{...}, ...]}
+
+        All-or-nothing: every row is validated first, and only if all of them
+        pass are they inserted (one lock, one INSERT). A rejected batch saves
+        nothing and answers 400 {"errors": [{"row": 3, "data": {"price": [...]}}]}
+        where "row" is the 0-based index into the array that was sent.
+
+        Not a ModelViewSet action: urls.py binds it by hand, like the others.
+        """
+        # Runs the org-exists / is-member / content-type-belongs-to-org checks
+        # (this is the permission gate - nothing else on this path does it).
+        content_type = self.get_content_type()
+        # Read once: every row is validated against, and stored under, this
+        # same version even if someone publishes a newer one mid-request.
+        version = self.get_latest_version()
+
+        envelope = BulkEntrySerializer(data=request.data)
+        envelope.is_valid(raise_exception=True)
+        rows = envelope.validated_data["entries"]
+
+        # Validate everything BEFORE taking the lock, so a slow or invalid
+        # batch never makes other writers of this content type wait.
+        errors = []
+        for index, row in enumerate(rows):
+            row_errors = validate_entry_data(version.schema, row)
+            if row_errors:
+                errors.append({"row": index, "data": row_errors})
+        if errors:
+            return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            # Same lock as perform_create, taken once for the whole batch.
+            locked_content_type = ContentType.objects.select_for_update().get(
+                pk=content_type.pk
+            )
+            last_sequence_number = Entry.objects.filter(
+                content_type=locked_content_type
+            ).aggregate(Max("number"))["number__max"]
+            first_number = (last_sequence_number or 0) + 1
+
+            # bulk_create() skips Entry.save(), which is what normally derives
+            # content_type from the version - so it is set here by hand.
+            created = Entry.objects.bulk_create([
+                Entry(
+                    content_type_version=version,
+                    content_type_id=version.content_type_id,
+                    data=row,
+                    number=first_number + offset,
+                )
+                for offset, row in enumerate(rows)
+            ])
+
+        return Response(
+            {
+                "created": len(created),
+                "entries": EntrySerializer(created, many=True).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )

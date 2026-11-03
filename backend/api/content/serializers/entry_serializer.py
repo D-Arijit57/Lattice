@@ -3,6 +3,28 @@ from content.models import Entry
 from content.services.entry_validation import validate_entry_data
 
 
+# One bulk request has to finish inside the server's request timeout, so the
+# batch size is capped. The frontend enforces the same number (MAX_BULK_ROWS
+# in frontend/src/lib/csv.ts).
+MAX_BULK_ENTRIES = 500
+
+
+class BulkEntrySerializer(serializers.Serializer):
+    """
+    Shape of a bulk create body: {"entries": [{...data}, {...data}]}.
+
+    This only checks the envelope (a non-empty list, within the cap, of JSON
+    objects). Each row's contents are checked against the schema by the view
+    with validate_entry_data(), so errors can be reported per row index.
+    """
+
+    entries = serializers.ListField(
+        child=serializers.DictField(),
+        min_length=1,
+        max_length=MAX_BULK_ENTRIES,
+    )
+
+
 class CurrentContentTypeVersionDefault:
     requires_context = True
 
