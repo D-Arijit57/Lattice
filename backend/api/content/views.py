@@ -1,5 +1,6 @@
+from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from accounts.models import Organization, OrganizationMembership
@@ -208,13 +209,18 @@ class FieldViewSet(ContentTypeScopedViewSet):
         return context
 
 
-class EntryViewSet(ContentTypeScopedViewSet):
+class EntryViewSet(mixins.UpdateModelMixin, ContentTypeScopedViewSet):
     """
     list     -> GET  .../content-types/<ct>/entries/   (newest first)
     retrieve -> GET  .../content-types/<ct>/entries/<pk>/
     create   -> POST .../content-types/<ct>/entries/
+    partial_update -> PATCH  .../entries/<pk>/          (edit data in place)
+    archive  -> DELETE .../entries/<pk>/                (soft delete)
+    restore  -> POST   .../entries/<pk>/restore/
 
-    list returns entries across every version of the content type. A new
+    list hides archived entries unless ?archived=true (then it shows only
+    those). Edits are validated against the entry's own pinned version and
+    never change its number, version or created_at. list returns entries across every version of the content type. A new
     entry always attaches to the *latest* version, resolved here and only on
     create. list is cursor-paginated (EntryCursorPagination) - the response is
     {"next", "previous", "results"}, 50 rows per page, no total count.
@@ -227,12 +233,38 @@ class EntryViewSet(ContentTypeScopedViewSet):
 
     def get_queryset(self):
         content_type = self.get_content_type()
-        return (
+        queryset = (
             Entry.objects
             .filter(content_type=content_type)
             .select_related("content_type_version")
             .order_by("-created_at", "-id")
-            )
+        )
+        # Only the list is filtered: detail/restore must still find archived rows.
+        if self.action == "list":
+            if self.request.query_params.get("archived") == "true":
+                queryset = queryset.filter(archived_at__isnull=False)
+            else:
+                queryset = queryset.filter(archived_at__isnull=True)
+        return queryset
+
+    def perform_update(self, serializer):
+        if serializer.instance.archived_at is not None:
+            raise ValidationError({"detail": "Restore this entry before editing it."})
+        serializer.save()
+
+    def archive(self, request, *args, **kwargs):
+        entry = self.get_object()
+        if entry.archived_at is None:
+            entry.archived_at = timezone.now()
+            entry.save(update_fields=["archived_at", "updated_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def restore(self, request, *args, **kwargs):
+        entry = self.get_object()
+        if entry.archived_at is not None:
+            entry.archived_at = None
+            entry.save(update_fields=["archived_at", "updated_at"])
+        return Response(EntrySerializer(entry).data)
     def perform_create(self, serializer):
         # while you perform the creation always use atomicity
         with transaction.atomic():
@@ -288,6 +320,9 @@ class EntryViewSet(ContentTypeScopedViewSet):
             # EntrySerializer.content_type_version is a HiddenField whose
             # default (CurrentContentTypeVersionDefault) reads this key.
             context["content_type_version"] = self.get_latest_version()
+        elif self.action == "partial_update":
+            # An edit stays on the version the entry was saved under.
+            context["content_type_version"] = self.get_object().content_type_version
         return context
 
     def bulk_create(self, request, *args, **kwargs):

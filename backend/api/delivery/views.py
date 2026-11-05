@@ -35,7 +35,7 @@ class DeliveryEntryViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vie
     def get_queryset(self):
         return (
             Entry.objects
-            .filter(content_type=self.get_content_type())
+            .filter(content_type=self.get_content_type(), archived_at__isnull=True)
             .select_related("content_type_version")
             .order_by("-created_at", "-id")
         )

@@ -60,6 +60,8 @@ export type Entry = {
   data: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  // null = live; a timestamp = archived (soft-deleted, restorable).
+  archived_at: string | null;
 };
 
 // Entries are cursor-paginated: `next` is an absolute URL ending in ?cursor=...

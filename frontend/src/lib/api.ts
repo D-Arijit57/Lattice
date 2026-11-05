@@ -231,10 +231,14 @@ export const versions = {
 };
 
 export const entries = {
-  list: (orgId: number, ctId: number, cursor?: string | null) =>
-    request<EntryPage>(
-      `${inContentType(orgId, ctId)}/entries/${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
-    ),
+  // `archived` switches between live entries (default) and archived ones.
+  list: (orgId: number, ctId: number, cursor?: string | null, archived = false) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    if (archived) params.set('archived', 'true');
+    const query = params.toString();
+    return request<EntryPage>(`${inContentType(orgId, ctId)}/entries/${query ? `?${query}` : ''}`);
+  },
 
   get: (orgId: number, ctId: number, entryId: number) =>
     request<Entry>(`${inContentType(orgId, ctId)}/entries/${entryId}/`),
@@ -244,6 +248,20 @@ export const entries = {
       method: 'POST',
       body: JSON.stringify({ data }),
     }),
+
+  // Edits the entry in place (same id, number and version).
+  update: (orgId: number, ctId: number, entryId: number, data: Record<string, unknown>) =>
+    request<Entry>(`${inContentType(orgId, ctId)}/entries/${entryId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ data }),
+    }),
+
+  // Soft delete: the entry disappears from lists and the delivery API but can be restored.
+  archive: (orgId: number, ctId: number, entryId: number) =>
+    request<void>(`${inContentType(orgId, ctId)}/entries/${entryId}/`, { method: 'DELETE' }),
+
+  restore: (orgId: number, ctId: number, entryId: number) =>
+    request<Entry>(`${inContentType(orgId, ctId)}/entries/${entryId}/restore/`, { method: 'POST' }),
 
   // Each item of `rows` is one entry's `data`. All rows are saved or none are.
   bulkCreate: (orgId: number, ctId: number, rows: Record<string, unknown>[]) =>

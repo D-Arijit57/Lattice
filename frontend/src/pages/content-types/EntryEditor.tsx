@@ -14,8 +14,9 @@ import { formatDateTime } from "@/lib/utils"
 
 // One page, two modes:
 //   /entries/new        -> a form built from the newest schema version
-//   /entries/:entryId   -> the same form, read-only, for an existing entry
-// (The API has no update or delete, so an existing entry is view-only.)
+//   /entries/:entryId   -> the same form, editable in place, for an existing entry
+// An existing entry can be archived (soft delete) and restored; an archived
+// one is read-only until restored.
 export function EntryEditor() {
   const { entryId } = useParams()
   const isNew = entryId === undefined
@@ -40,6 +41,7 @@ export function EntryEditor() {
   const [values, setValues] = useState<Record<string, string | boolean>>({})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<unknown>(null)
+  const [saved, setSaved] = useState(false)
 
   const failed = type.error ?? versionList.error ?? entry.error
   if (failed) {
@@ -83,7 +85,15 @@ export function EntryEditor() {
 
   const properties = version?.schema.properties ?? {}
   const requiredNames = version?.schema.required ?? []
-  const payload = isNew ? buildPayload(properties, values) : (existing?.data ?? {})
+  const archived = existing?.archived_at != null
+  // What the inputs show: the stored data (as text) with the user's edits on top.
+  const stored: Record<string, string | boolean> = {}
+  for (const [name, property] of Object.entries(properties)) {
+    const raw = existing?.data[name]
+    stored[name] = kindOf(property) === "boolean" ? raw === true : raw == null ? "" : String(raw)
+  }
+  const current = isNew ? values : { ...stored, ...values }
+  const payload = buildPayload(properties, current)
   const errors = fieldErrors(saveError)
   const generalErrors = errors.non_field_errors ?? []
   // Something failed but not per field (e.g. an unexpected server error).
@@ -92,20 +102,49 @@ export function EntryEditor() {
   async function save() {
     setSaving(true)
     setSaveError(null)
+    setSaved(false)
     try {
-      const created = await entries.create(orgId, contentType!.id, payload)
-      navigate(`${basePath}/entries/${created.id}`)
+      if (isNew) {
+        const created = await entries.create(orgId, contentType!.id, payload)
+        navigate(`${basePath}/entries/${created.id}`)
+      } else {
+        await entries.update(orgId, contentType!.id, existing!.id, payload)
+        setValues({})
+        entry.reload()
+        setSaved(true)
+        setSaving(false)
+      }
     } catch (err) {
       setSaveError(err)
       setSaving(false)
     }
   }
 
-  function valueFor(name: string, isBoolean: boolean): string | boolean {
-    const raw = isNew ? values[name] : existing?.data[name]
-    if (isBoolean) return raw === true
-    return raw === undefined || raw === null ? "" : String(raw)
+  async function setArchived(archive: boolean) {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      if (archive) {
+        await entries.archive(orgId, contentType!.id, existing!.id)
+        navigate(`${basePath}/entries`)
+        return
+      }
+      await entries.restore(orgId, contentType!.id, existing!.id)
+      entry.reload()
+    } catch (err) {
+      setSaveError(err)
+    }
+    setSaving(false)
   }
+
+  function valueFor(name: string, isBoolean: boolean): string | boolean {
+    const raw = current[name]
+    if (isBoolean) return raw === true
+    return raw === undefined ? "" : String(raw)
+  }
+
+  const readOnly = !isNew && archived
+  const dirty = Object.keys(values).length > 0
 
   const json = JSON.stringify(payload, null, 2)
 
@@ -141,9 +180,28 @@ export function EntryEditor() {
             <Link to={`${basePath}/entries`}>{isNew ? "Cancel" : "Back to entries"}</Link>
           </Button>
           {isNew && <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save entry"}</Button>}
+          {!isNew && !archived && (
+            <>
+              <Button variant="outline" className="bg-white" onClick={() => setArchived(true)} disabled={saving}>
+                Archive
+              </Button>
+              <Button onClick={save} disabled={saving || !dirty}>{saving ? "Saving..." : "Save changes"}</Button>
+            </>
+          )}
+          {readOnly && <Button onClick={() => setArchived(false)} disabled={saving}>Restore</Button>}
         </div>
       </div>
 
+      {readOnly && (
+        <p className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This entry is archived: it is hidden from the entries list and the delivery API. Restore it to edit.
+        </p>
+      )}
+      {saved && !dirty && (
+        <p className="mb-6 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          Changes saved.
+        </p>
+      )}
       {showGeneralError && (
         <p className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {errorMessage(saveError)}
@@ -176,7 +234,7 @@ export function EntryEditor() {
             className="max-w-3xl space-y-8"
             onSubmit={(e) => {
               e.preventDefault()
-              if (isNew) save()
+              if (!readOnly && (isNew || dirty)) save()
             }}
           >
             {Object.entries(properties).map(([name, property]) => {
@@ -196,9 +254,9 @@ export function EntryEditor() {
                         <input
                           id={inputId}
                           type="checkbox"
-                          disabled={!isNew}
+                          disabled={readOnly}
                           checked={valueFor(name, true) as boolean}
-                          onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.checked }))}
+                          onChange={(e) => { setSaved(false); setValues((v) => ({ ...v, [name]: e.target.checked })) }}
                           className="rounded border-neutral-300 text-blue-600 w-4 h-4"
                         />
                         Yes
@@ -208,9 +266,9 @@ export function EntryEditor() {
                         id={inputId}
                         type={kind === "number" ? "number" : kind === "date" ? "date" : "text"}
                         step={kind === "number" ? "any" : undefined}
-                        disabled={!isNew}
+                        disabled={readOnly}
                         value={valueFor(name, false) as string}
-                        onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
+                        onChange={(e) => { setSaved(false); setValues((v) => ({ ...v, [name]: e.target.value })) }}
                         className={kind === "number" ? "font-mono" : undefined}
                       />
                     )}
