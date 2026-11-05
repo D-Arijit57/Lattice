@@ -793,3 +793,85 @@ def test_bulk_create_under_another_orgs_content_type_returns_404(api_client, use
 
     assert response.status_code == 404
     assert Entry.objects.count() == 0
+
+
+# --- edit + archive (soft delete) -------------------------------------------
+
+
+@pytest.mark.django_db
+def test_entry_can_be_edited_in_place(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    entry = Entry.objects.create(
+        content_type_version=version, data={"title": "Shrit", "price": 1}, number=1
+    )
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-detail", args=[organization.id, content_type.id, entry.id])
+
+    response = api_client.patch(url, {"data": {"title": "Shirt", "price": 1}}, format="json")
+
+    assert response.status_code == 200
+    entry.refresh_from_db()
+    assert entry.data == {"title": "Shirt", "price": 1}
+    assert (entry.number, entry.content_type_version_id) == (1, version.id)
+    assert Entry.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_entry_edit_is_validated_and_changes_nothing_when_invalid(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    entry = Entry.objects.create(
+        content_type_version=version, data={"title": "Shirt", "price": 1}, number=1
+    )
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-detail", args=[organization.id, content_type.id, entry.id])
+
+    response = api_client.patch(url, {"data": {"title": "Shirt", "price": "x"}}, format="json")
+
+    assert response.status_code == 400
+    assert "price" in response.data["data"]
+    entry.refresh_from_db()
+    assert entry.data == {"title": "Shirt", "price": 1}
+
+
+@pytest.mark.django_db
+def test_archive_hides_entry_and_restore_brings_it_back(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    entry = Entry.objects.create(
+        content_type_version=version, data={"title": "Shirt", "price": 1}, number=1
+    )
+    api_client.force_authenticate(user=user)
+    list_url = reverse("entry-list", args=[organization.id, content_type.id])
+    detail_url = reverse("entry-detail", args=[organization.id, content_type.id, entry.id])
+    restore_url = reverse("entry-restore", args=[organization.id, content_type.id, entry.id])
+
+    assert api_client.delete(detail_url).status_code == 204
+    assert Entry.objects.filter(id=entry.id).exists()  # soft: the row is kept
+    assert api_client.get(list_url).data["results"] == []
+    archived = api_client.get(list_url + "?archived=true").data["results"]
+    assert [e["id"] for e in archived] == [entry.id]
+
+    # an archived entry can't be edited until it is restored
+    assert api_client.patch(detail_url, {"data": {"title": "A", "price": 2}}, format="json").status_code == 400
+
+    response = api_client.post(restore_url)
+    assert response.status_code == 200
+    assert response.data["archived_at"] is None
+    assert [e["id"] for e in api_client.get(list_url).data["results"]] == [entry.id]
+
+
+@pytest.mark.django_db
+def test_non_member_cannot_edit_or_archive(api_client, product_setup):
+    from django.contrib.auth import get_user_model
+
+    organization, content_type, version = product_setup
+    entry = Entry.objects.create(
+        content_type_version=version, data={"title": "Shirt", "price": 1}, number=1
+    )
+    outsider = get_user_model().objects.create_user(email="outsider@example.com", name="Outsider", password="pw-12345-x")
+    api_client.force_authenticate(user=outsider)
+    url = reverse("entry-detail", args=[organization.id, content_type.id, entry.id])
+
+    assert api_client.patch(url, {"data": {"title": "x", "price": 1}}, format="json").status_code == 403
+    assert api_client.delete(url).status_code == 403
+    entry.refresh_from_db()
+    assert entry.archived_at is None

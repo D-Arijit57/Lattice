@@ -74,6 +74,9 @@ class Entry(models.Model):
     data = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete: NULL = live. Archived entries are hidden from lists and the
+    # delivery API but kept (and keep their number), so they can be restored.
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         indexes = [

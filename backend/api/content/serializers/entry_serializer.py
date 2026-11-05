@@ -73,5 +73,6 @@ class EntrySerializer(serializers.ModelSerializer):
             "data",
             "created_at",
             "updated_at",
+            "archived_at",
         ]
-        read_only_fields = ["id", "number", "created_at", "updated_at"]
+        read_only_fields = ["id", "number", "created_at", "updated_at", "archived_at"]

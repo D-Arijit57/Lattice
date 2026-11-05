@@ -28,7 +28,12 @@ export function EntriesList() {
   const basePath = orgPath(`/content-types/${contentType.slug}`)
 
   const versionList = useApi(() => versions.list(orgId, contentType.id), [orgId, contentType.id])
-  const firstPage = useApi(() => entries.list(orgId, contentType.id), [orgId, contentType.id])
+  // Archived entries (soft-deleted) are hidden by default; this switches to them.
+  const [showArchived, setShowArchived] = useState(false)
+  const firstPage = useApi(
+    () => entries.list(orgId, contentType.id, null, showArchived),
+    [orgId, contentType.id, showArchived],
+  )
 
   // The API pages entries with a cursor ("give me what comes after this
   // one"), so the list grows by appending pages: page one comes from
@@ -46,7 +51,14 @@ export function EntriesList() {
     setMoreRows([])
     setLaterCursor(undefined)
     setImportedCount(null)
+    setShowArchived(false)
   }, [contentType.id])
+
+  function toggleArchived(value: boolean) {
+    setMoreRows([])
+    setLaterCursor(undefined)
+    setShowArchived(value)
+  }
 
   const rows = [...(firstPage.data?.results ?? []), ...moreRows]
   const cursor = laterCursor === undefined ? cursorFrom(firstPage.data?.next ?? null) : laterCursor
@@ -55,7 +67,7 @@ export function EntriesList() {
     setLoadingMore(true)
     setMoreError(null)
     try {
-      const page = await entries.list(orgId, contentType.id, cursor)
+      const page = await entries.list(orgId, contentType.id, cursor, showArchived)
       setMoreRows((current) => [...current, ...page.results])
       setLaterCursor(cursorFrom(page.next))
     } catch (err) {
@@ -93,7 +105,21 @@ export function EntriesList() {
             {rows.length}{cursor ? "+" : ""} {rows.length === 1 && !cursor ? "entry" : "entries"}
           </Badge>
         </div>
-        {latest && (
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-md border border-neutral-200 bg-white p-0.5 text-sm">
+            {[false, true].map((archived) => (
+              <button
+                key={String(archived)}
+                type="button"
+                onClick={() => toggleArchived(archived)}
+                className={`rounded px-3 py-1 ${showArchived === archived ? "bg-neutral-900 text-white" : "text-neutral-600 hover:text-neutral-900"}`}
+              >
+                {archived ? "Archived" : "Live"}
+              </button>
+            ))}
+          </div>
+        </div>
+        {latest && !showArchived && (
           <div className="flex items-center gap-3">
             {BULK_IMPORT_ENABLED && (
               <Button variant="outline" className="bg-white" onClick={() => setImportOpen(true)}>
@@ -136,9 +162,9 @@ export function EntriesList() {
       ) : rows.length === 0 ? (
         <div className="bg-white border border-neutral-200 shadow-sm rounded-xl">
           <EmptyState
-            title="No entries yet"
-            description="Create the first one."
-            action={<Button asChild><Link to={`${basePath}/entries/new`}>New entry</Link></Button>}
+            title={showArchived ? "No archived entries" : "No entries yet"}
+            description={showArchived ? "Archived entries show up here and can be restored." : "Create the first one."}
+            action={showArchived ? undefined : <Button asChild><Link to={`${basePath}/entries/new`}>New entry</Link></Button>}
           />
         </div>
       ) : (
