@@ -1039,3 +1039,27 @@ def test_archive_field_keeps_published_versions_and_drops_it_from_the_next(api_c
     # the name can be used again
     again = api_client.post(field_list, {"name": "price", "data_type": "string", "required": False}, format="json")
     assert again.status_code == 201
+
+
+# --- Delete all entries ------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_archive_all_entries_is_soft_and_scoped_to_the_content_type(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    other_type = ContentType.objects.create(organization=organization, name="Other", slug="other")
+    Field.objects.create(content_type=other_type, name="title", data_type="string", required=False)
+    other_version = create_content_type_version(content_type=other_type)
+    for number in (1, 2):
+        Entry.objects.create(content_type_version=version, data={"title": "t"}, number=number)
+    keep = Entry.objects.create(content_type_version=other_version, data={}, number=1)
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-list", args=[organization.id, content_type.pk])
+
+    response = api_client.delete(url)
+
+    assert response.status_code == 200
+    assert response.data == {"archived": 2}
+    assert api_client.get(url).data["results"] == []
+    assert len(api_client.get(url + "?archived=true").data["results"]) == 2  # kept, restorable
+    keep.refresh_from_db()
+    assert keep.archived_at is None
