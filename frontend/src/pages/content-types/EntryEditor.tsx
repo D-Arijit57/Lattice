@@ -1,13 +1,14 @@
 import { useState } from "react"
-import { Link, useNavigate, useParams } from "react-router-dom"
-import { ChevronRight } from "lucide-react"
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
+import { Check, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { entries, errorMessage, fieldErrors, versions } from "@/lib/api"
-import { buildPayload, kindOf } from "@/lib/entry-fields"
+import { buildPayload, isoToLocalInput, kindOf } from "@/lib/entry-fields"
 import { useApi } from "@/lib/use-api"
 import { useContentTypeFromSlug, useOrgId, useOrgPath } from "@/lib/use-org"
 import { formatDateTime } from "@/lib/utils"
@@ -23,6 +24,7 @@ export function EntryEditor() {
   const orgId = useOrgId()
   const orgPath = useOrgPath()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const type = useContentTypeFromSlug()
   const contentType = type.contentType
@@ -41,7 +43,13 @@ export function EntryEditor() {
   const [values, setValues] = useState<Record<string, string | boolean>>({})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<unknown>(null)
-  const [saved, setSaved] = useState(false)
+  // Starts true when this page was opened by saving a new entry (see save()),
+  // so the green "Saved" shows on the entry's own page, whether or not React
+  // kept this component mounted across the URL change.
+  const [saved, setSaved] = useState(
+    (location.state as { justCreated?: boolean } | null)?.justCreated === true,
+  )
+  const [confirmingArchive, setConfirmingArchive] = useState(false)
 
   const failed = type.error ?? versionList.error ?? entry.error
   if (failed) {
@@ -90,10 +98,16 @@ export function EntryEditor() {
   const stored: Record<string, string | boolean> = {}
   for (const [name, property] of Object.entries(properties)) {
     const raw = existing?.data[name]
-    stored[name] = kindOf(property) === "boolean" ? raw === true : raw == null ? "" : String(raw)
+    const kind = kindOf(property)
+    stored[name] =
+      kind === "boolean" ? raw === true
+      : raw == null ? ""
+      // the datetime picker wants the viewer's local time, not the stored UTC string
+      : kind === "datetime" ? isoToLocalInput(raw)
+      : String(raw)
   }
   const current = isNew ? values : { ...stored, ...values }
-  const payload = buildPayload(properties, current)
+  const payload = buildPayload(properties, current, existing?.data)
   const errors = fieldErrors(saveError)
   const generalErrors = errors.non_field_errors ?? []
   // Something failed but not per field (e.g. an unexpected server error).
@@ -106,35 +120,44 @@ export function EntryEditor() {
     try {
       if (isNew) {
         const created = await entries.create(orgId, contentType!.id, payload)
-        navigate(`${basePath}/entries/${created.id}`)
+        // /entries/new and /entries/:id are the same page, so React keeps this
+        // component (and its state) alive when the URL changes. Reset what
+        // belongs to the new-entry form, and say "saved" on the entry's page.
+        setValues({})
+        setSaved(true)
+        navigate(`${basePath}/entries/${created.id}`, { state: { justCreated: true } })
       } else {
         await entries.update(orgId, contentType!.id, existing!.id, payload)
         setValues({})
         entry.reload()
         setSaved(true)
-        setSaving(false)
       }
     } catch (err) {
       setSaveError(err)
+    } finally {
+      // Runs on success and on failure, so the button can never stay stuck on
+      // "Saving..." whichever path the code took above.
       setSaving(false)
     }
   }
 
-  async function setArchived(archive: boolean) {
+  async function archiveEntry() {
+    // ConfirmDialog shows the error and keeps itself open if this throws.
+    await entries.archive(orgId, contentType!.id, existing!.id)
+    navigate(`${basePath}/entries`)
+  }
+
+  async function restoreEntry() {
     setSaving(true)
     setSaveError(null)
     try {
-      if (archive) {
-        await entries.archive(orgId, contentType!.id, existing!.id)
-        navigate(`${basePath}/entries`)
-        return
-      }
       await entries.restore(orgId, contentType!.id, existing!.id)
       entry.reload()
     } catch (err) {
       setSaveError(err)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   function valueFor(name: string, isBoolean: boolean): string | boolean {
@@ -182,13 +205,20 @@ export function EntryEditor() {
           {isNew && <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save entry"}</Button>}
           {!isNew && !archived && (
             <>
-              <Button variant="outline" className="bg-white" onClick={() => setArchived(true)} disabled={saving}>
+              <Button variant="outline" className="bg-white" onClick={() => setConfirmingArchive(true)} disabled={saving}>
                 Archive
               </Button>
-              <Button onClick={save} disabled={saving || !dirty}>{saving ? "Saving..." : "Save changes"}</Button>
+              {saved && !dirty && !saving ? (
+                // Green "all saved" state; it goes back to "Save changes" on the next edit.
+                <Button disabled className="bg-green-600 text-white disabled:opacity-100">
+                  <Check className="w-4 h-4 mr-2" /> Saved
+                </Button>
+              ) : (
+                <Button onClick={save} disabled={saving || !dirty}>{saving ? "Saving..." : "Save changes"}</Button>
+              )}
             </>
           )}
-          {readOnly && <Button onClick={() => setArchived(false)} disabled={saving}>Restore</Button>}
+          {readOnly && <Button onClick={restoreEntry} disabled={saving}>Restore</Button>}
         </div>
       </div>
 
@@ -198,8 +228,8 @@ export function EntryEditor() {
         </p>
       )}
       {saved && !dirty && (
-        <p className="mb-6 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          Changes saved.
+        <p className="mb-6 flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          <Check className="w-4 h-4" /> Saved
         </p>
       )}
       {showGeneralError && (
@@ -264,7 +294,7 @@ export function EntryEditor() {
                     ) : (
                       <Input
                         id={inputId}
-                        type={kind === "number" ? "number" : kind === "date" ? "date" : "text"}
+                        type={kind === "number" ? "number" : kind === "date" ? "date" : kind === "datetime" ? "datetime-local" : "text"}
                         step={kind === "number" ? "any" : undefined}
                         disabled={readOnly}
                         value={valueFor(name, false) as string}
@@ -304,6 +334,16 @@ export function EntryEditor() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog
+        open={confirmingArchive}
+        onOpenChange={setConfirmingArchive}
+        title={`Archive entry #${existing?.number ?? entryId}?`}
+        description="It disappears from the entries list and the delivery API. You can restore it from the Archived tab."
+        confirmLabel="Archive"
+        busyLabel="Archiving..."
+        onConfirm={archiveEntry}
+      />
     </div>
   )
 }

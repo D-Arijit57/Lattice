@@ -167,6 +167,10 @@ export const organizations = {
 
   create: (name: string) =>
     request<Organization>('/organizations/', { method: 'POST', body: JSON.stringify({ name }) }),
+
+  // Soft delete: the organization disappears from every list, its data is kept.
+  // DELETE is just the HTTP verb the backend chose for that action.
+  archive: (orgId: number) => request<void>(`${inOrg(orgId)}/`, { method: 'DELETE' }),
 };
 
 // Everything below lives under /organizations/{org}/..., so each call takes
@@ -182,6 +186,10 @@ export const contentTypes = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  // Soft delete: hidden from lists and the delivery API, entries are kept.
+  archive: (orgId: number, ctId: number) =>
+    request<void>(`${inContentType(orgId, ctId)}/`, { method: 'DELETE' }),
 };
 
 export const apiKeys = {
@@ -214,6 +222,11 @@ export const fields = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  // Soft delete: gone from the editor and from the next published version.
+  // Versions already published keep it, so existing entries stay valid.
+  archive: (orgId: number, ctId: number, fieldId: number) =>
+    request<void>(`${inContentType(orgId, ctId)}/fields/${fieldId}/`, { method: 'DELETE' }),
 };
 
 export const versions = {

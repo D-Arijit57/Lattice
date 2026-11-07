@@ -84,11 +84,11 @@ def test_valid_key_lists_entries(api_client, acme):
 
 
 @pytest.mark.django_db
-def test_entries_are_newest_first(api_client, acme):
+def test_entries_are_oldest_first(api_client, acme):
     response = api_client.get(_list_url(), **_auth(RAW_KEY))
 
     ids = [row["id"] for row in response.data["results"]]
-    assert ids == sorted(ids, reverse=True)
+    assert ids == sorted(ids)
 
 
 @pytest.mark.django_db

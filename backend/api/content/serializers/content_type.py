@@ -43,7 +43,8 @@ class ContentTypeSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
         validators = [
             UniqueTogetherValidator(
-                queryset=ContentType.objects.all(),
+                # live content types only: an archived slug can be reused
+                queryset=ContentType.objects.filter(archived_at__isnull=True),
                 fields=["organization", "slug"],
             )
         ]

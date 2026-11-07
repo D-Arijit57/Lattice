@@ -23,6 +23,7 @@ class OrganizationScopedViewSet(
     list     -> GET  /organizations/
     retrieve -> GET  /organizations/<pk>/
     create   -> POST /organizations/
+    archive  -> DELETE /organizations/<pk>/   (soft delete)
     """
 
     permission_classes = [permissions.IsAuthenticated]
@@ -50,10 +51,20 @@ class OrganizationScopedViewSet(
         # walking backwards across that FK to the requesting user.
         return (
             Organization.objects
-            .filter(memberships__user=self.request.user)
+            .filter(memberships__user=self.request.user, archived_at__isnull=True)
             .order_by("name")
         )
-        
+
+    def archive(self, request, *args, **kwargs):
+        # get_object() goes through get_queryset(), so only a live organization
+        # the caller is a member of can be found: anything else is a 404.
+        # There are no roles yet, so any member may archive it. Once roles
+        # exist this should be restricted to owners.
+        organization = self.get_object()
+        organization.archived_at = timezone.now()
+        organization.save(update_fields=["archived_at", "updated_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 class APIKeyViewSet(OrganizationScopedViewSet, mixins.DestroyModelMixin):
     serializer_class = APIKeySerializer
 
@@ -67,7 +78,8 @@ class APIKeyViewSet(OrganizationScopedViewSet, mixins.DestroyModelMixin):
         if not hasattr(self, "_organization"):
             try:
                 organization = Organization.objects.get(
-                    pk=self.kwargs["organization_id"]
+                    pk=self.kwargs["organization_id"],
+                    archived_at__isnull=True,
                 )
             except Organization.DoesNotExist:
                 raise NotFound("Organization not found.")

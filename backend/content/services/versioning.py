@@ -21,7 +21,9 @@ def create_content_type_version(content_type):
         # of the Fields and this version being committed - the generated
         # schema always matches a single, consistent snapshot of Fields.
         fields = list(
-            Field.objects.select_for_update().filter(content_type=locked_content_type)
+            Field.objects.select_for_update().filter(
+                content_type=locked_content_type, archived_at__isnull=True
+            )
         )
 
         if not fields:

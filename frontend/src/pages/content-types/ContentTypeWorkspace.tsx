@@ -1,9 +1,12 @@
-import { Link, NavLink, Outlet, useLocation, useOutletContext } from "react-router-dom"
-import { ChevronRight } from "lucide-react"
+import { useState } from "react"
+import { Link, NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom"
+import { ChevronRight, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
-import { useContentTypeFromSlug, useOrgPath } from "@/lib/use-org"
+import { contentTypes } from "@/lib/api"
+import { useContentTypeFromSlug, useOrgId, useOrgPath } from "@/lib/use-org"
 import { cn } from "@/lib/utils"
 import type { ContentType } from "@/types"
 
@@ -23,8 +26,12 @@ const tabClass = (active: boolean) =>
 
 export function ContentTypeWorkspace() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const orgId = useOrgId()
   const orgPath = useOrgPath()
   const { contentType, loading, error, reload } = useContentTypeFromSlug()
+  // Hooks must run on every render, so this stays above the early returns below.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   if (loading) return <LoadingState />
   if (error) return <ErrorState error={error} onRetry={reload} />
@@ -59,7 +66,21 @@ export function ContentTypeWorkspace() {
             <Badge variant="secondary" className="font-mono">{contentType.slug}</Badge>
           </div>
         </div>
+        <Button variant="outline" className="ml-auto bg-white text-red-600 hover:text-red-700" onClick={() => setConfirmingDelete(true)}>
+          <Trash2 className="w-4 h-4 mr-2" /> Delete
+        </Button>
       </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title={`Delete "${contentType.name}"?`}
+        description="The content type and its entries disappear from the app and from the delivery API, so anything using its slug stops getting data. The data itself is kept, not erased."
+        onConfirm={async () => {
+          await contentTypes.archive(orgId, contentType.id)
+          navigate(orgPath("/content-types"))
+        }}
+      />
 
       <div className="border-b border-neutral-200 mb-6">
         <nav className="flex space-x-6">

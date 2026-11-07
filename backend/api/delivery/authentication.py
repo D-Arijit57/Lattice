@@ -14,8 +14,14 @@ class APIKeyAuthentication(BaseAuthentication):
         raw_key = header[len(self.keyword) + 1:]
         
         try:
-            api_key = APIKey.objects.get(hashed_key=hash_api_key(raw_key))
+            api_key = APIKey.objects.select_related("organization").get(
+                hashed_key=hash_api_key(raw_key)
+            )
         except APIKey.DoesNotExist:
+            raise AuthenticationFailed("Invalid API Key")
+
+        # keys of an archived organization stop working, like a revoked key
+        if api_key.organization.archived_at is not None:
             raise AuthenticationFailed("Invalid API Key")
         
         if api_key.revoked_at is not None:

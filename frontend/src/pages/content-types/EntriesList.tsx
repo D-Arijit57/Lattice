@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { cursorFrom, entries, errorMessage, versions } from "@/lib/api"
-import { displayValue } from "@/lib/entry-fields"
+import { displayValue, kindOf } from "@/lib/entry-fields"
 import { useApi } from "@/lib/use-api"
 import { useOrgId, useOrgPath } from "@/lib/use-org"
 import { formatDateTime } from "@/lib/utils"
@@ -77,8 +77,8 @@ export function EntriesList() {
     }
   }
 
-  // Newest entries come first, so after an import start the list over from
-  // page one instead of appending to what was already loaded.
+  // Entries are listed oldest first, so imported rows land after everything
+  // already loaded: start the list over from page one instead of appending.
   function handleImported(count: number) {
     setImportOpen(false)
     setImportedCount(count)
@@ -190,7 +190,7 @@ export function EntriesList() {
                   </TableCell>
                   {columns.map((name) => (
                     <TableCell key={name} className="text-neutral-700 max-w-[14rem] truncate">
-                      {displayValue(entry.data[name])}
+                      {displayValue(entry.data[name], kindOf(latest.schema.properties[name]))}
                     </TableCell>
                   ))}
                   <TableCell className="font-mono text-sm text-neutral-500">v{entry.version_number}</TableCell>

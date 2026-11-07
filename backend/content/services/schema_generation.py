@@ -5,6 +5,9 @@ TYPE_MAP = {
     "number": {"type": "number"},
     "boolean": {"type": "boolean"},
     "date": {"type": "string", "format": "date"},
+    # A moment in time, as an RFC 3339 / ISO 8601 string with a UTC offset,
+    # e.g. "2026-11-07T14:30:00Z".
+    "datetime": {"type": "string", "format": "date-time"},
 }
 
 def generate_schema(fields):

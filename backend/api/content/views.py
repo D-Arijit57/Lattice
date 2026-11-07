@@ -61,8 +61,10 @@ class OrganizationScopedViewSet(
         # so the cache does not get shared between different requests.
         if not hasattr(self, "_organization"):
             try:
+                # an archived organization looks exactly like a missing one
                 organization = Organization.objects.get(
-                    pk=self.kwargs["organization_id"]
+                    pk=self.kwargs["organization_id"],
+                    archived_at__isnull=True,
                 )
             except Organization.DoesNotExist:
                 raise NotFound("Organization not found.")
@@ -98,6 +100,7 @@ class ContentTypeScopedViewSet(OrganizationScopedViewSet):
                 self._content_type = ContentType.objects.get(
                     pk=self.kwargs["content_type_id"],
                     organization=organization,
+                    archived_at__isnull=True,
                 )
             except ContentType.DoesNotExist:
                 raise NotFound("Content type not found.")
@@ -106,9 +109,10 @@ class ContentTypeScopedViewSet(OrganizationScopedViewSet):
 
 class ContentTypeViewSet(OrganizationScopedViewSet):
     """
-    list     -> GET  /organizations/<org>/content-types/
-    retrieve -> GET  /organizations/<org>/content-types/<pk>/
-    create   -> POST /organizations/<org>/content-types/
+    list     -> GET    /organizations/<org>/content-types/
+    retrieve -> GET    /organizations/<org>/content-types/<pk>/
+    create   -> POST   /organizations/<org>/content-types/
+    archive  -> DELETE /organizations/<org>/content-types/<pk>/   (soft delete)
     """
     # Configuration: tells DRF which serializer to use for this ViewSet.
     serializer_class = ContentTypeSerializer
@@ -125,9 +129,17 @@ class ContentTypeViewSet(OrganizationScopedViewSet):
         organization = self.get_organization()
         return (
             ContentType.objects
-            .filter(organization=organization)
+            .filter(organization=organization, archived_at__isnull=True)
             .order_by("name")
         )
+
+    def archive(self, request, *args, **kwargs):
+        # get_object() goes through get_queryset(), so an unknown, foreign or
+        # already-archived content type is a 404 - and so is any other org's.
+        content_type = self.get_object()
+        content_type.archived_at = timezone.now()
+        content_type.save(update_fields=["archived_at", "updated_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     # get_serializer_context : provided by genericViewSet
     # it gets internally called by DRF's get_serializer()
@@ -181,14 +193,16 @@ class ContentTypeVersionViewSet(ContentTypeScopedViewSet):
 
 class FieldViewSet(ContentTypeScopedViewSet):
     """
-    list     -> GET  .../content-types/<ct>/fields/
-    retrieve -> GET  .../content-types/<ct>/fields/<pk>/
-    create   -> POST .../content-types/<ct>/fields/
+    list     -> GET    .../content-types/<ct>/fields/
+    retrieve -> GET    .../content-types/<ct>/fields/<pk>/
+    create   -> POST   .../content-types/<ct>/fields/
+    archive  -> DELETE .../content-types/<ct>/fields/<pk>/   (soft delete)
 
     These are the *current, live* field definitions for a content type -
     editing them has no effect on ContentTypeVersions already cut. Schema
-    generation (next task) reads whatever Fields exist here at the moment a
-    new version is created.
+    generation reads whatever live (non-archived) Fields exist here at the
+    moment a new version is created. Archiving a field therefore only takes
+    effect in the next version: published versions keep it.
     """
 
     serializer_class = FieldSerializer
@@ -197,9 +211,15 @@ class FieldViewSet(ContentTypeScopedViewSet):
         content_type = self.get_content_type()
         return (
             Field.objects
-            .filter(content_type=content_type)
+            .filter(content_type=content_type, archived_at__isnull=True)
             .order_by("name")
         )
+
+    def archive(self, request, *args, **kwargs):
+        field = self.get_object()
+        field.archived_at = timezone.now()
+        field.save(update_fields=["archived_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -211,7 +231,7 @@ class FieldViewSet(ContentTypeScopedViewSet):
 
 class EntryViewSet(mixins.UpdateModelMixin, ContentTypeScopedViewSet):
     """
-    list     -> GET  .../content-types/<ct>/entries/   (newest first)
+    list     -> GET  .../content-types/<ct>/entries/   (oldest first, by number)
     retrieve -> GET  .../content-types/<ct>/entries/<pk>/
     create   -> POST .../content-types/<ct>/entries/
     partial_update -> PATCH  .../entries/<pk>/          (edit data in place)
@@ -237,7 +257,7 @@ class EntryViewSet(mixins.UpdateModelMixin, ContentTypeScopedViewSet):
             Entry.objects
             .filter(content_type=content_type)
             .select_related("content_type_version")
-            .order_by("-created_at", "-id")
+            .order_by("number", "id")
         )
         # Only the list is filtered: detail/restore must still find archived rows.
         if self.action == "list":
