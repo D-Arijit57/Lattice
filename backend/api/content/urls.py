@@ -21,7 +21,9 @@ content_type_detail = ContentTypeViewSet.as_view({"get": "retrieve", "delete": "
 version_list = ContentTypeVersionViewSet.as_view({"get": "list", "post": "create"})
 version_detail = ContentTypeVersionViewSet.as_view({"get": "retrieve"})
 
-entry_list = EntryViewSet.as_view({"get": "list", "post": "create"})
+entry_list = EntryViewSet.as_view(
+    {"get": "list", "post": "create", "delete": "archive_all"}
+)
 entry_detail = EntryViewSet.as_view(
     {"get": "retrieve", "patch": "partial_update", "delete": "archive"}
 )

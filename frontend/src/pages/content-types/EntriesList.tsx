@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { Plus, Upload } from "lucide-react"
+import { Plus, Trash2, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ImportEntriesDialog } from "@/components/forms/ImportEntriesDialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
@@ -45,6 +46,9 @@ export function EntriesList() {
   const [moreError, setMoreError] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [importedCount, setImportedCount] = useState<number | null>(null)
+  // Which delete confirmation is open: one entry, or all of them.
+  const [deleting, setDeleting] = useState<Entry | null>(null)
+  const [deletingAll, setDeletingAll] = useState(false)
 
   // Switching to another content type starts the list over.
   useEffect(() => {
@@ -82,6 +86,13 @@ export function EntriesList() {
   function handleImported(count: number) {
     setImportOpen(false)
     setImportedCount(count)
+    setMoreRows([])
+    setLaterCursor(undefined)
+    firstPage.reload()
+  }
+
+  // After a delete, start over from page one so the list matches the server.
+  function refreshList() {
     setMoreRows([])
     setLaterCursor(undefined)
     firstPage.reload()
@@ -126,6 +137,11 @@ export function EntriesList() {
                 <Upload className="w-4 h-4 mr-2" /> Import CSV
               </Button>
             )}
+            {rows.length > 0 && (
+              <Button variant="outline" className="bg-white text-red-600" onClick={() => setDeletingAll(true)}>
+                <Trash2 className="w-4 h-4 mr-2" /> Delete all
+              </Button>
+            )}
             <Button asChild>
               <Link to={`${basePath}/entries/new`}><Plus className="w-4 h-4 mr-2" /> New entry</Link>
             </Button>
@@ -150,6 +166,28 @@ export function EntriesList() {
           onImported={handleImported}
         />
       )}
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={`Delete entry #${deleting?.number}?`}
+        description="It disappears from the list and the delivery API. You can restore it from the Archived tab."
+        onConfirm={async () => {
+          await entries.archive(orgId, contentType.id, deleting!.id)
+          refreshList()
+        }}
+      />
+      <ConfirmDialog
+        open={deletingAll}
+        onOpenChange={setDeletingAll}
+        title="Delete all entries?"
+        description={`Every live entry in ${contentType.name} disappears from the list and the delivery API. They are kept and can be restored one by one from the Archived tab.`}
+        confirmLabel="Delete all"
+        onConfirm={async () => {
+          await entries.archiveAll(orgId, contentType.id)
+          refreshList()
+        }}
+      />
 
       {!latest ? (
         <div className="bg-white border border-neutral-200 shadow-sm rounded-xl">
@@ -178,6 +216,7 @@ export function EntriesList() {
                 ))}
                 <TableHead>Version</TableHead>
                 <TableHead>Created</TableHead>
+                {!showArchived && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -195,6 +234,13 @@ export function EntriesList() {
                   ))}
                   <TableCell className="font-mono text-sm text-neutral-500">v{entry.version_number}</TableCell>
                   <TableCell className="text-neutral-500 text-sm">{formatDateTime(entry.created_at)}</TableCell>
+                  {!showArchived && (
+                    <TableCell>
+                      <Button variant="ghost" size="icon" aria-label={`Delete entry #${entry.number}`} onClick={() => setDeleting(entry)}>
+                        <Trash2 className="w-4 h-4 text-neutral-500" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

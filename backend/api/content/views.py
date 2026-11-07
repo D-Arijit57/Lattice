@@ -236,6 +236,7 @@ class EntryViewSet(mixins.UpdateModelMixin, ContentTypeScopedViewSet):
     create   -> POST .../content-types/<ct>/entries/
     partial_update -> PATCH  .../entries/<pk>/          (edit data in place)
     archive  -> DELETE .../entries/<pk>/                (soft delete)
+    archive_all -> DELETE .../content-types/<ct>/entries/  (soft delete every live entry)
     restore  -> POST   .../entries/<pk>/restore/
 
     list hides archived entries unless ?archived=true (then it shows only
@@ -278,6 +279,18 @@ class EntryViewSet(mixins.UpdateModelMixin, ContentTypeScopedViewSet):
             entry.archived_at = timezone.now()
             entry.save(update_fields=["archived_at", "updated_at"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def archive_all(self, request, *args, **kwargs):
+        # One UPDATE for every live entry of this content type. Nothing is
+        # removed: each row can still be restored individually. update()
+        # skips auto_now, so updated_at is set by hand.
+        now = timezone.now()
+        count = (
+            Entry.objects
+            .filter(content_type=self.get_content_type(), archived_at__isnull=True)
+            .update(archived_at=now, updated_at=now)
+        )
+        return Response({"archived": count})
 
     def restore(self, request, *args, **kwargs):
         entry = self.get_object()

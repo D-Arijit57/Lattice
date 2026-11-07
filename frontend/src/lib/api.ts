@@ -273,6 +273,10 @@ export const entries = {
   archive: (orgId: number, ctId: number, entryId: number) =>
     request<void>(`${inContentType(orgId, ctId)}/entries/${entryId}/`, { method: 'DELETE' }),
 
+  // Soft delete of every live entry in the content type; each can be restored.
+  archiveAll: (orgId: number, ctId: number) =>
+    request<{ archived: number }>(`${inContentType(orgId, ctId)}/entries/`, { method: 'DELETE' }),
+
   restore: (orgId: number, ctId: number, entryId: number) =>
     request<Entry>(`${inContentType(orgId, ctId)}/entries/${entryId}/restore/`, { method: 'POST' }),
 
