@@ -103,6 +103,10 @@ export function readEntries(text: string, schema: VersionSchema): CsvImport {
         fail("Must be a number.")
       } else if (kind === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
         fail("Must be a date like 2026-11-04.")
+      } else if (kind === "datetime" && Number.isNaN(new Date(raw).getTime())) {
+        // No offset (2026-11-04T14:30) means the importer's local time, the
+        // same as picking it in the entry form; an offset or "Z" is kept as given.
+        fail("Must be a date and time like 2026-11-04T14:30.")
       } else {
         values[name] = raw
       }

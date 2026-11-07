@@ -8,7 +8,9 @@ from api.accounts.views import OrganizationScopedViewSet, APIKeyViewSet
 # same thing a router would generate, written out by hand so the routes
 # stay visible.
 organization_list = OrganizationScopedViewSet.as_view({"get": "list", "post": "create"})
-organization_detail = OrganizationScopedViewSet.as_view({"get": "retrieve"})
+organization_detail = OrganizationScopedViewSet.as_view(
+    {"get": "retrieve", "delete": "archive"}
+)
 api_key_list = APIKeyViewSet.as_view({"get": "list", "post": "create"})
 api_key_detail = APIKeyViewSet.as_view({"delete": "destroy"})
 urlpatterns = [

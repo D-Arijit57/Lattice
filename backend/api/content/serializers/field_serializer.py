@@ -33,7 +33,8 @@ class FieldSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
         validators = [
             UniqueTogetherValidator(
-                queryset=Field.objects.all(),
+                # live fields only: an archived field's name can be reused
+                queryset=Field.objects.filter(archived_at__isnull=True),
                 fields=["content_type", "name"],
             )
         ]

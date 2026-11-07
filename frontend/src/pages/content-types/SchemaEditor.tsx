@@ -1,10 +1,11 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { Plus } from "lucide-react"
+import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { AddFieldDialog } from "@/components/forms/AddFieldDialog"
 import { fields } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
@@ -17,6 +18,7 @@ export function SchemaEditor() {
   const orgPath = useOrgPath()
   const [addOpen, setAddOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const fieldList = useApi(() => fields.list(orgId, contentType.id), [orgId, contentType.id])
 
@@ -110,10 +112,30 @@ export function SchemaEditor() {
                 <input type="checkbox" checked={selected.required} readOnly disabled className="rounded border-neutral-300 w-4 h-4" />
                 Required field
               </label>
+              <Button
+                variant="outline"
+                className="w-full text-red-600 hover:text-red-700"
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" /> Delete field
+              </Button>
             </div>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title={`Delete field "${selected?.name}"?`}
+        description="It is left out of the next schema version you publish. Versions already published keep it, so existing entries stay valid."
+        onConfirm={async () => {
+          if (!selected) return
+          await fields.archive(orgId, contentType.id, selected.id)
+          setSelectedId(null)
+          fieldList.reload()
+        }}
+      />
 
       <AddFieldDialog
         orgId={orgId}

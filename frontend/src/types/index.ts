@@ -18,8 +18,8 @@ export type ContentType = {
   updated_at: string;
 };
 
-// The four data types the backend supports (content/services/schema_generation.py).
-export type FieldDataType = 'string' | 'number' | 'boolean' | 'date';
+// The data types the backend supports (content/services/schema_generation.py).
+export type FieldDataType = 'string' | 'number' | 'boolean' | 'date' | 'datetime';
 
 export type Field = {
   id: number;
@@ -32,7 +32,8 @@ export type Field = {
 // One property inside a version's JSON Schema, as generate_schema() writes it.
 export type SchemaProperty = {
   type: 'string' | 'number' | 'boolean';
-  format?: 'date';
+  // 'date' is a calendar day, 'date-time' a moment in time (a "datetime" field).
+  format?: 'date' | 'date-time';
 };
 
 export type VersionSchema = {

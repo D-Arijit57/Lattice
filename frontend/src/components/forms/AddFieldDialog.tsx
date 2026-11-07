@@ -11,7 +11,14 @@ import {
 import { errorMessage, fields } from "@/lib/api"
 import type { Field, FieldDataType } from "@/types"
 
-const DATA_TYPES: FieldDataType[] = ["string", "number", "boolean", "date"]
+// What the type dropdown shows for each data type the backend accepts.
+const DATA_TYPES: { value: FieldDataType; label: string }[] = [
+  { value: "string", label: "string" },
+  { value: "number", label: "number" },
+  { value: "boolean", label: "boolean" },
+  { value: "date", label: "date (calendar day)" },
+  { value: "datetime", label: "datetime (date and time)" },
+]
 
 export function AddFieldDialog({
   orgId,
@@ -95,7 +102,7 @@ export function AddFieldDialog({
               className="flex h-9 w-full rounded-md border border-neutral-200 bg-white px-3 py-1 text-sm shadow-sm font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
             >
               {DATA_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
+                <option key={type.value} value={type.value}>{type.label}</option>
               ))}
             </select>
           </div>

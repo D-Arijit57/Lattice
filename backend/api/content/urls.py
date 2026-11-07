@@ -16,7 +16,7 @@ from api.content.views import (
 # exactly what a router would have generated, written out by hand so the
 # routes stay visible.
 content_type_list = ContentTypeViewSet.as_view({"get": "list", "post": "create"})
-content_type_detail = ContentTypeViewSet.as_view({"get": "retrieve"})
+content_type_detail = ContentTypeViewSet.as_view({"get": "retrieve", "delete": "archive"})
 
 version_list = ContentTypeVersionViewSet.as_view({"get": "list", "post": "create"})
 version_detail = ContentTypeVersionViewSet.as_view({"get": "retrieve"})
@@ -29,7 +29,7 @@ entry_restore = EntryViewSet.as_view({"post": "restore"})
 entry_bulk_create = EntryViewSet.as_view({"post": "bulk_create"})
 
 field_list = FieldViewSet.as_view({"get": "list", "post": "create"})
-field_detail = FieldViewSet.as_view({"get": "retrieve"})
+field_detail = FieldViewSet.as_view({"get": "retrieve", "delete": "archive"})
 
 urlpatterns = [
     path(

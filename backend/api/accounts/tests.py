@@ -73,3 +73,52 @@ def test_retrieve_non_member_org_returns_404(api_client, user):
     # non-member org looks identical to one that doesn't exist and its
     # existence isn't revealed.
     assert response.status_code == 404
+
+
+# --- Archive (soft delete) an organization ---------------------------------------
+
+@pytest.mark.django_db
+def test_member_can_archive_an_organization(api_client, user):
+    org = Organization.objects.create(name="Acme")
+    OrganizationMembership.objects.create(user=user, organization=org, role_id=1)
+    api_client.force_authenticate(user=user)
+    detail = reverse("organization-detail", args=[org.id])
+
+    assert api_client.delete(detail).status_code == 204
+
+    org.refresh_from_db()
+    assert org.archived_at is not None            # soft: the row is kept
+    assert api_client.get(LIST_URL).data == []
+    assert api_client.get(detail).status_code == 404
+    # everything under it is unreachable too
+    assert api_client.get(reverse("content-type-list", args=[org.id])).status_code == 404
+
+
+@pytest.mark.django_db
+def test_non_member_cannot_archive_an_organization(api_client, user):
+    org = Organization.objects.create(name="Theirs")
+    api_client.force_authenticate(user=user)
+
+    response = api_client.delete(reverse("organization-detail", args=[org.id]))
+
+    assert response.status_code == 404  # not in this user's queryset
+    org.refresh_from_db()
+    assert org.archived_at is None
+
+
+@pytest.mark.django_db
+def test_api_key_of_an_archived_organization_stops_working(api_client, user):
+    from accounts.models import APIKey, hash_api_key
+
+    org = Organization.objects.create(name="Acme")
+    OrganizationMembership.objects.create(user=user, organization=org, role_id=1)
+    APIKey.objects.create(organization=org, name="k", hashed_key=hash_api_key("lat_orgkey"))
+    headers = {"HTTP_AUTHORIZATION": "Bearer lat_orgkey"}
+    assert api_client.get("/api/delivery/content-types/", **headers).status_code == 200
+
+    api_client.force_authenticate(user=user)
+    api_client.delete(reverse("organization-detail", args=[org.id]))
+    api_client.force_authenticate(user=None)
+
+    # same as a revoked key: DRF answers 401 or 403 depending on the auth class
+    assert api_client.get("/api/delivery/content-types/", **headers).status_code in (401, 403)

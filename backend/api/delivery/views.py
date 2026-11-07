@@ -27,6 +27,7 @@ class DeliveryEntryViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vie
                 self._content_type = ContentType.objects.get(
                     organization = self.request.auth.organization,
                     slug = self.kwargs["slug"],
+                    archived_at__isnull = True,
                 )
             except ContentType.DoesNotExist:
                 raise NotFound("Content type not found")
@@ -37,7 +38,7 @@ class DeliveryEntryViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vie
             Entry.objects
             .filter(content_type=self.get_content_type(), archived_at__isnull=True)
             .select_related("content_type_version")
-            .order_by("-created_at", "-id")
+            .order_by("number", "id")
         )
 
 
@@ -53,14 +54,16 @@ class DeliveryContentTypeViewSet(viewsets.ViewSet):
 
     def list(self, request):
         content_types = ContentType.objects.filter(
-            organization=request.auth.organization
+            organization=request.auth.organization, archived_at__isnull=True
         ).order_by("name")
         return Response([content_type_summary(ct) for ct in content_types])
 
     def retrieve(self, request, slug=None):
         try:
             content_type = ContentType.objects.get(
-                organization=request.auth.organization, slug=slug
+                organization=request.auth.organization,
+                slug=slug,
+                archived_at__isnull=True,
             )
         except ContentType.DoesNotExist:
             raise NotFound("Content type not found")

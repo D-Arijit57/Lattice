@@ -20,6 +20,9 @@ class Organization(models.Model):
     name = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete: NULL = live. An archived organization disappears from the
+    # API (lists, detail, API-key delivery) but its data is kept.
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     def __str__(self):
         return self.name

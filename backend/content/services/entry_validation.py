@@ -1,4 +1,25 @@
+from datetime import datetime
+
 from jsonschema import Draft202012Validator, FormatChecker
+
+# jsonschema only enforces "date-time" when an optional package
+# (rfc3339-validator) is installed; otherwise it silently accepts any string.
+# Registering our own checker makes the check always on, with no extra
+# dependency. A checker function returns True when the value is fine.
+format_checker = FormatChecker()
+
+
+@format_checker.checks("date-time")
+def _is_date_time(value):
+    if not isinstance(value, str):
+        return True  # not a string: the "type" keyword reports that instead
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    # RFC 3339 requires a UTC offset ("Z" or "+05:30"), so a bare local time
+    # such as "2026-11-07T14:30" is rejected.
+    return parsed.tzinfo is not None and "T" in value.upper()
 
 # key for errors about the payload as a whole rather than one field
 # (same name DRF uses for serializer-level errors)
@@ -27,6 +48,8 @@ def _message(error):
             return f"Must be {label}."
     if error.validator == "format" and error.validator_value == "date":
         return "Must be a valid date (YYYY-MM-DD)."
+    if error.validator == "format" and error.validator_value == "date-time":
+        return "Must be a valid date and time with a UTC offset (e.g. 2026-11-07T14:30:00Z)."
     # a keyword we don't have a friendlier wording for
     return error.message
 
@@ -49,9 +72,10 @@ def validate_entry_data(schema, data):
               Errors about the payload as a whole (e.g. not an object) are
               under NON_FIELD_ERRORS.
     """
-    # FormatChecker is what makes "format": "date" actually enforced; without
-    # it the library treats format as a hint and accepts "not-a-date"
-    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    # The format checker is what makes "format": "date" / "date-time" actually
+    # enforced; without it the library treats format as a hint and accepts
+    # "not-a-date"
+    validator = Draft202012Validator(schema, format_checker=format_checker)
 
     errors = {}
     # iter_errors() : maps the errors to the defined schema, so instead of manually handling that

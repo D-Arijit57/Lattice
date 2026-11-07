@@ -6,8 +6,9 @@ class EntryCursorPagination(CursorPagination):
     page_size = 50
 
     # The field(s) the cursor walks along. DRF applies this ordering to the
-    # queryset itself during list(), and uses the FIRST field (created_at) for
-    # the cursor boundary comparison; -id only stabilises the sort. created_at
-    # is auto_now_add, so it is non-nullable and never changes - which is what
-    # CursorPagination needs to produce a stable cursor.
-    ordering = ("-created_at", "-id")
+    # queryset itself during list(), and uses the FIRST field (number) for the
+    # cursor boundary comparison; id only stabilises the sort. number is the
+    # per-content-type sequence (1, 2, 3...), assigned once under a lock and
+    # never changed, so the cursor stays stable. Must mirror
+    # EntryViewSet.get_queryset and the entry_ct_number_idx index.
+    ordering = ("number", "id")

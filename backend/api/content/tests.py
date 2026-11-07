@@ -1,5 +1,6 @@
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from accounts.models import Organization, OrganizationMembership
 from api.content.serializers import MAX_BULK_ENTRIES, EntrySerializer
@@ -875,3 +876,166 @@ def test_non_member_cannot_edit_or_archive(api_client, product_setup):
     assert api_client.delete(url).status_code == 403
     entry.refresh_from_db()
     assert entry.archived_at is None
+
+
+# --- Ascending order -----------------------------------------------------------
+
+@pytest.mark.django_db
+def test_entry_list_is_oldest_first_across_pages(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    # 51 entries with real numbers: page 1 is #1..#50 and page 2 is #51
+    for number in range(1, 52):
+        Entry.objects.create(
+            content_type_version=version, data={"title": f"Item {number}", "price": number}, number=number
+        )
+    api_client.force_authenticate(user=user)
+
+    first = api_client.get(reverse("entry-list", args=[organization.id, content_type.id]))
+    assert [e["number"] for e in first.data["results"]] == list(range(1, 51))
+
+    second = api_client.get(first.data["next"])
+    assert [e["number"] for e in second.data["results"]] == [51]
+    assert second.data["next"] is None
+
+
+# --- datetime field --------------------------------------------------------------
+
+@pytest.fixture
+def event_setup(user):
+    organization = Organization.objects.create(name="Events Inc")
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    content_type = ContentType.objects.create(organization=organization, name="Event", slug="event")
+    Field.objects.create(content_type=content_type, name="starts_at", data_type="datetime", required=True)
+    version = create_content_type_version(content_type=content_type)
+    return organization, content_type, version
+
+
+@pytest.mark.django_db
+def test_datetime_field_generates_a_date_time_schema(event_setup):
+    _, _, version = event_setup
+    assert version.schema["properties"]["starts_at"] == {"type": "string", "format": "date-time"}
+
+
+@pytest.mark.django_db
+def test_datetime_field_type_is_accepted_by_the_field_endpoint(api_client, user, member_org):
+    content_type = ContentType.objects.create(organization=member_org, name="Event", slug="event")
+    api_client.force_authenticate(user=user)
+    url = reverse("field-list", args=[member_org.id, content_type.id])
+
+    response = api_client.post(url, {"name": "starts_at", "data_type": "datetime", "required": True}, format="json")
+
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("value", ["2026-11-07T14:30:00Z", "2026-11-07T14:30:00+05:30", "2026-11-07T14:30:00.250Z"])
+def test_datetime_entry_accepts_values_with_an_offset(api_client, user, event_setup, value):
+    organization, content_type, _ = event_setup
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-list", args=[organization.id, content_type.id])
+
+    response = api_client.post(url, {"data": {"starts_at": value}}, format="json")
+
+    assert response.status_code == 201
+    assert response.data["data"]["starts_at"] == value
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("value", ["not-a-date", "2026-11-07", "2026-11-07T14:30", "2026-13-45T10:00:00Z", 12345])
+def test_datetime_entry_rejects_bad_values(api_client, user, event_setup, value):
+    organization, content_type, _ = event_setup
+    api_client.force_authenticate(user=user)
+    url = reverse("entry-list", args=[organization.id, content_type.id])
+
+    response = api_client.post(url, {"data": {"starts_at": value}}, format="json")
+
+    assert response.status_code == 400
+    assert Entry.objects.count() == 0
+
+
+# --- Archive (soft delete) of content types and fields ---------------------------
+
+@pytest.mark.django_db
+def test_archive_content_type_hides_it_and_frees_its_slug(api_client, user, product_setup):
+    organization, content_type, _ = product_setup
+    api_client.force_authenticate(user=user)
+    detail = reverse("content-type-detail", args=[organization.id, content_type.pk])
+    listing = reverse("content-type-list", args=[organization.id])
+
+    assert api_client.delete(detail).status_code == 204
+
+    content_type.refresh_from_db()
+    assert content_type.archived_at is not None          # soft: the row is kept
+    assert api_client.get(listing).data == []
+    assert api_client.get(detail).status_code == 404
+    assert api_client.delete(detail).status_code == 404  # already archived
+    # everything nested under it is gone from the API too
+    assert api_client.get(reverse("entry-list", args=[organization.id, content_type.pk])).status_code == 404
+    # the slug can be used again
+    again = api_client.post(listing, {"name": "Product", "slug": "product"}, format="json")
+    assert again.status_code == 201
+
+
+@pytest.mark.django_db
+def test_archived_content_type_is_hidden_from_the_delivery_api(api_client, user, product_setup):
+    from accounts.models import APIKey, hash_api_key
+
+    organization, content_type, _ = product_setup
+    APIKey.objects.create(organization=organization, name="k", hashed_key=hash_api_key("lat_testkey"))
+    headers = {"HTTP_AUTHORIZATION": "Bearer lat_testkey"}
+    assert api_client.get("/api/delivery/content-types/product/", **headers).status_code == 200
+
+    content_type.archived_at = timezone.now()
+    content_type.save()
+
+    assert api_client.get("/api/delivery/content-types/product/", **headers).status_code == 404
+    assert api_client.get("/api/delivery/content-types/", **headers).data == []
+
+
+@pytest.mark.django_db
+def test_archive_content_type_of_another_org_returns_404(api_client, user, product_setup):
+    organization, content_type, _ = product_setup
+    mine = Organization.objects.create(name="Mine")
+    OrganizationMembership.objects.create(user=user, organization=mine, role_id=1)
+    api_client.force_authenticate(user=user)
+
+    response = api_client.delete(reverse("content-type-detail", args=[mine.id, content_type.pk]))
+
+    assert response.status_code == 404
+    content_type.refresh_from_db()
+    assert content_type.archived_at is None
+
+
+@pytest.mark.django_db
+def test_non_member_cannot_archive_a_content_type(api_client, product_setup):
+    from django.contrib.auth import get_user_model
+
+    organization, content_type, _ = product_setup
+    outsider = get_user_model().objects.create_user(email="o@example.com", name="O", password="pw-12345-x")
+    api_client.force_authenticate(user=outsider)
+
+    response = api_client.delete(reverse("content-type-detail", args=[organization.id, content_type.pk]))
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_archive_field_keeps_published_versions_and_drops_it_from_the_next(api_client, user, product_setup):
+    organization, content_type, version = product_setup
+    price = Field.objects.get(content_type=content_type, name="price")
+    api_client.force_authenticate(user=user)
+    field_detail = reverse("field-detail", args=[organization.id, content_type.pk, price.pk])
+    field_list = reverse("field-list", args=[organization.id, content_type.pk])
+
+    assert api_client.delete(field_detail).status_code == 204
+
+    assert [f["name"] for f in api_client.get(field_list).data] == ["title"]
+    assert api_client.get(field_detail).status_code == 404
+    # v1 is untouched, v2 no longer has the field
+    version.refresh_from_db()
+    assert "price" in version.schema["properties"]
+    v2 = create_content_type_version(content_type=content_type)
+    assert list(v2.schema["properties"]) == ["title"]
+    # the name can be used again
+    again = api_client.post(field_list, {"name": "price", "data_type": "string", "required": False}, format="json")
+    assert again.status_code == 201

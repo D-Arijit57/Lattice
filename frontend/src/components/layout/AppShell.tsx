@@ -1,10 +1,11 @@
 import { useState } from "react"
 import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom"
-import { LayoutDashboard, Database, Search, Plus, Check, KeyRound } from "lucide-react"
+import { LayoutDashboard, Database, Search, Plus, Check, KeyRound, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { CreateOrganizationForm } from "@/components/forms/CreateOrganizationForm"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { useAuth } from "@/lib/auth-context"
@@ -39,6 +40,7 @@ function Sidebar({
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const base = `/orgs/${current.id}`
 
   return (
@@ -76,8 +78,23 @@ function Sidebar({
             <DropdownMenuItem onClick={() => setCreateOpen(true)}>
               <Plus className="w-4 h-4 mr-2" /> Create organization
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-red-600 focus:text-red-700">
+              <Trash2 className="w-4 h-4 mr-2" /> Delete "{current.name}"
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title={`Delete organization "${current.name}"?`}
+          description="All of its content types, entries and API keys stop working and disappear for every member. The data itself is kept, not erased."
+          onConfirm={async () => {
+            await organizations.archive(current.id)
+            // "/" opens the next organization, or asks for a first one.
+            navigate("/", { replace: true })
+          }}
+        />
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent>

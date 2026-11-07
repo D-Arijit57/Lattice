@@ -15,11 +15,17 @@ class ContentType(models.Model):
     slug = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Soft delete: NULL = live. Archived content types are hidden from the API
+    # and the delivery API; their versions and entries are kept.
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         constraints = [
+            # Only live rows must be unique, so a slug can be reused once the
+            # content type that held it has been archived.
             models.UniqueConstraint(
                 fields=["organization", "slug"],
+                condition=models.Q(archived_at__isnull=True),
                 name="unique_organization_slug",
             ),
         ]
@@ -80,13 +86,13 @@ class Entry(models.Model):
 
     class Meta:
         indexes = [
-            # Serves "newest entries of a content type": filter on content_type,
-            # then read rows already sorted created_at DESC, id DESC, so a list
-            # page reads ~51 index entries instead of scanning and sorting the
-            # table. Must mirror EntryCursorPagination.ordering.
+            # Serves "entries of a content type, oldest first": filter on
+            # content_type, then read rows already sorted number ASC, id ASC, so
+            # a list page reads ~51 index entries instead of scanning and
+            # sorting the table. Must mirror EntryCursorPagination.ordering.
             models.Index(
-                fields=["content_type", "-created_at", "-id"],
-                name="entry_ct_newest_idx",
+                fields=["content_type", "number", "id"],
+                name="entry_ct_number_idx",
             ),
         ]
 
@@ -109,11 +115,18 @@ class Field(models.Model):
     name = models.CharField(max_length=255)
     data_type = models.CharField(max_length=255)
     required = models.BooleanField(default = True)
-    
+    # Soft delete: NULL = live. An archived field is hidden from the editor and
+    # left out of newly published versions; versions already published (and the
+    # entries pinned to them) are untouched.
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
+
     class Meta:
         constraints = [
+            # Only live fields must be unique, so a name can be reused after
+            # the field that held it has been archived.
             models.UniqueConstraint(
                 fields=["content_type", "name"],
+                condition=models.Q(archived_at__isnull=True),
                 name="unique_content_field",
             ),
         ]
