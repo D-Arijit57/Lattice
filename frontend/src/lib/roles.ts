@@ -63,3 +63,21 @@ export function canRemoveMember(actorRole: number, targetRole: number): boolean 
   if (actorRole === ROLE.ADMIN) return targetRole <= ROLE.EDITOR
   return false
 }
+
+// What each role may do, in the words a person would use.
+export const ROLE_SUMMARY: Record<number, string> = {
+  [ROLE.VIEWER]: "Can read everything except API keys and members.",
+  [ROLE.EDITOR]: "Can also change entries and draft fields, and ask for a publish.",
+  [ROLE.ADMIN]: "Can also manage content types, publishing, API keys and members.",
+  [ROLE.OWNER]: "Can also change roles, hand over ownership and delete the organization.",
+}
+
+// Soft, low-contrast colours so a role reads at a glance without shouting.
+// Tailwind needs the full class names written out, so they are listed here
+// rather than built from a colour name.
+export const ROLE_STYLE: Record<number, string> = {
+  [ROLE.OWNER]: "border-violet-200 bg-violet-50 text-violet-700",
+  [ROLE.ADMIN]: "border-sky-200 bg-sky-50 text-sky-700",
+  [ROLE.EDITOR]: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  [ROLE.VIEWER]: "border-slate-200 bg-slate-50 text-slate-600",
+}

@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { Navigate, NavLink, Outlet, useNavigate, useParams } from "react-router-dom"
 import { LayoutDashboard, Database, Search, Plus, Check, KeyRound, Trash2, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -8,10 +8,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { NotificationBell } from "@/components/layout/NotificationBell"
 import { CreateOrganizationForm } from "@/components/forms/CreateOrganizationForm"
-import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
+import { ErrorState, LoadingState } from "@/components/ui/states"
 import { useAuth } from "@/lib/auth-context"
 import { OrgProvider } from "@/lib/org-context"
-import { roleCan, roleLabel } from "@/lib/roles"
+import { roleCan } from "@/lib/roles"
+import { RoleBadge } from "@/components/RoleBadge"
 import { organizations } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import type { Organization } from "@/types"
@@ -78,7 +79,8 @@ function Sidebar({
                   {organization.name[0]?.toUpperCase()}
                 </div>
                 <span className="truncate flex-1">{organization.name}</span>
-                {organization.id === current.id && <Check className="w-4 h-4 text-neutral-500" />}
+                <RoleBadge role={organization.my_role} className="ml-2 px-2 py-0 text-[10px]" />
+                {organization.id === current.id && <Check className="w-4 h-4 text-neutral-500 ml-2" />}
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
@@ -184,7 +186,8 @@ function Sidebar({
               </div>
               <div className="flex-1 overflow-hidden text-sm">
                 <p className="truncate font-medium text-neutral-900">{user?.name}</p>
-                <p className="truncate text-xs text-neutral-500">{user?.email} · {roleLabel(current.my_role)}</p>
+                <p className="truncate text-xs text-neutral-500">{user?.email}</p>
+                <RoleBadge role={current.my_role} className="mt-1 px-2 py-0 text-[10px]" />
               </div>
               <span className="text-neutral-400 text-xs">▼</span>
             </button>
@@ -207,21 +210,32 @@ export function AppShell() {
   // "does the signed-in user belong to the organization in this URL?": the
   // list only ever contains their own organizations.
   const orgs = useApi(() => organizations.list(), [])
+  // The organization in the URL may simply be newer than the list we loaded
+  // (just created, or just joined). Before deciding it is not theirs, the list
+  // is read once more for that organization.
+  const [rechecked, setRechecked] = useState<string | null>(null)
+
+  const current = orgs.data?.find((organization) => String(organization.id) === orgId)
+  const missing = !orgs.loading && orgs.error == null && orgs.data != null && !current
+
+  useEffect(() => {
+    if (missing && rechecked !== orgId) {
+      setRechecked(orgId ?? null)
+      orgs.reload()
+    }
+    // orgs.reload is rebuilt every render; the two values below are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missing, orgId, rechecked])
 
   if (orgs.loading) return <LoadingState />
   if (orgs.error) return <ErrorState error={orgs.error} onRetry={orgs.reload} />
-
-  const current = orgs.data?.find((organization) => String(organization.id) === orgId)
   if (!current) {
-    return (
-      <div className="min-h-screen bg-[#fafafa] flex items-center justify-center">
-        <EmptyState
-          title="Organization not found"
-          description="It doesn't exist, or you are not a member of it."
-          action={<Button asChild><Link to="/">Go to your organizations</Link></Button>}
-        />
-      </div>
-    )
+    // About to re-read the list: show loading, not a wrong answer.
+    if (rechecked !== orgId) return <LoadingState />
+    // Still not in the list: this is not their organization. "/" sends them
+    // somewhere useful instead of a dead end: their first organization if they
+    // have one, otherwise the dashboard with their invitations.
+    return <Navigate to="/" replace />
   }
 
   return (

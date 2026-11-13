@@ -1,90 +1,39 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
-import { NOTIFICATIONS_CHANGED, NotificationBell } from "@/components/layout/NotificationBell"
+import { AccountHeader } from "@/components/account/AccountHeader"
+import { InvitationList } from "@/components/account/InvitationList"
+import { RoleBadge } from "@/components/RoleBadge"
 import { useAuth } from "@/lib/auth-context"
-import { errorMessage, myInvitations, organizations } from "@/lib/api"
-import { ROLE, roleLabel } from "@/lib/roles"
+import { myInvitations, organizations } from "@/lib/api"
+import { ROLE_SUMMARY, roleLabel } from "@/lib/roles"
 import { useApi } from "@/lib/use-api"
-import { formatDate } from "@/lib/utils"
 import type { Invitation } from "@/types"
-
-const ROLE_BADGE: Record<number, "default" | "warning" | "secondary" | "outline"> = {
-  [ROLE.OWNER]: "default",
-  [ROLE.ADMIN]: "warning",
-  [ROLE.EDITOR]: "secondary",
-  [ROLE.VIEWER]: "outline",
-}
-
-// What each role may do, in the words a person would use. Shown next to the
-// roles so "Editor" is not a mystery.
-const ROLE_SUMMARY: Record<number, string> = {
-  [ROLE.VIEWER]: "Can read everything except API keys and members.",
-  [ROLE.EDITOR]: "Can also change entries and draft fields, and ask for a publish.",
-  [ROLE.ADMIN]: "Can also manage content types, publishing, API keys and members.",
-  [ROLE.OWNER]: "Can also change roles, hand over ownership and delete the organization.",
-}
 
 // Your own page: who you are, which organizations you are in and as what, and
 // the invitations waiting for an answer. It lives outside any organization, so
 // it has its own small header (with the notifications bell) instead of the
 // organization sidebar.
 export function AccountPage() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const orgs = useApi(() => organizations.list(), [])
   const invites = useApi(() => myInvitations.list(), [])
-
-  // The invitation being answered right now, so its buttons can be disabled.
-  const [busyId, setBusyId] = useState<number | null>(null)
-  const [error, setError] = useState<string | null>(null)
   // Set after accepting, to offer a way straight into the new organization.
   const [joined, setJoined] = useState<Invitation | null>(null)
 
-  async function answer(invitation: Invitation, accept: boolean) {
-    setBusyId(invitation.id)
-    setError(null)
-    try {
-      if (accept) {
-        setJoined(await myInvitations.accept(invitation.id))
-      } else {
-        await myInvitations.decline(invitation.id)
-      }
-      invites.reload()
-      // Joining adds an organization to the list below.
-      orgs.reload()
-      // The server marks the invitation's notification read: refresh the bell.
-      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED))
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setBusyId(null)
-    }
-  }
-
   return (
     <div className="min-h-screen bg-[#fafafa]">
-      <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-6 py-3">
-        <div className="flex items-center gap-3">
-          <Link to="/" className="font-logo text-2xl text-neutral-900 leading-none">Lattice</Link>
-          <NotificationBell />
-        </div>
-        <div className="flex items-center gap-3">
-          <Button asChild variant="outline" size="sm" className="bg-white">
-            <Link to="/">Back to workspace</Link>
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => logout()}>Log out</Button>
-        </div>
-      </header>
+      <AccountHeader>
+        <Button asChild variant="outline" size="sm" className="bg-white">
+          <Link to="/">Back to workspace</Link>
+        </Button>
+      </AccountHeader>
 
       <main className="max-w-3xl mx-auto p-8">
         <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Account</h2>
         <p className="text-neutral-500 mt-1">{user?.name} · {user?.email}</p>
 
-        {error && (
-          <p className="mt-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
-        )}
         {joined && (
           <p className="mt-6 flex items-center justify-between gap-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
             <span>You joined {joined.organization_name} as {roleLabel(joined.role_id)}.</span>
@@ -105,38 +54,15 @@ export function AccountPage() {
             />
           )}
           {invites.data && invites.data.length > 0 && (
-            <ul className="divide-y divide-neutral-100">
-              {invites.data.map((invitation) => (
-                <li key={invitation.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="font-medium text-neutral-900">
-                      {invitation.organization_name}{" "}
-                      <Badge variant={ROLE_BADGE[invitation.role_id] ?? "outline"} className="ml-1">
-                        {roleLabel(invitation.role_id)}
-                      </Badge>
-                    </p>
-                    <p className="text-sm text-neutral-500 mt-1">
-                      Invited by {invitation.invited_by_name} on {formatDate(invitation.created_at)}.{" "}
-                      {ROLE_SUMMARY[invitation.role_id]}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="bg-white"
-                      disabled={busyId === invitation.id}
-                      onClick={() => answer(invitation, false)}
-                    >
-                      Decline
-                    </Button>
-                    <Button size="sm" disabled={busyId === invitation.id} onClick={() => answer(invitation, true)}>
-                      Accept
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <InvitationList
+              invitations={invites.data}
+              onAnswered={(invitation, accepted) => {
+                if (accepted) setJoined(invitation)
+                invites.reload()
+                // Joining adds an organization to the list below.
+                orgs.reload()
+              }}
+            />
           )}
         </div>
 
@@ -154,9 +80,7 @@ export function AccountPage() {
                   <div className="min-w-0">
                     <p className="font-medium text-neutral-900">
                       {organization.name}{" "}
-                      <Badge variant={ROLE_BADGE[organization.my_role] ?? "outline"} className="ml-1">
-                        {roleLabel(organization.my_role)}
-                      </Badge>
+                      <RoleBadge role={organization.my_role} className="ml-1" />
                     </p>
                     <p className="text-sm text-neutral-500 mt-1">{ROLE_SUMMARY[organization.my_role]}</p>
                   </div>
