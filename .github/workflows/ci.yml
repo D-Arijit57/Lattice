@@ -32,6 +32,9 @@ jobs:
       SECRET_KEY: ci-only-throwaway-secret-key-at-least-32-bytes-long
       DEBUG: "True"
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # pytest uses content_engine/settings_test.py, which reads this one (and
+      # refuses a non-local host). Same throwaway service container.
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
