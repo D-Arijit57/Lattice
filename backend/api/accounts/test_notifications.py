@@ -97,6 +97,8 @@ def test_publish_request_notifies_admins_and_owner_but_not_the_requester(api_cli
     assert all(n.kind == "publish_requested" for n in notes)
     assert "Editor requested to publish Post" in notes[0].message
     assert notes[0].payload["publish_request_id"] == response.data["id"]
+    assert notes[0].payload["content_type_slug"] == "post"
+    assert notes[0].payload["organization_id"] == org.id
 
 
 @pytest.mark.django_db
@@ -264,3 +266,57 @@ def test_list_is_capped_at_50(api_client, team):
     api_client.force_authenticate(user=people["editor"])
 
     assert len(api_client.get(reverse("notification-list")).data) == 50
+
+
+# --- an answered invitation no longer nags -----------------------------------
+
+
+def invite_through_api(api_client, org, inviter, invitee):
+    api_client.force_authenticate(user=inviter)
+    response = api_client.post(
+        reverse("invitation-list", args=[org.id]),
+        {"invited_user": invitee.id, "role_id": Role.EDITOR}, format="json",
+    )
+    assert response.status_code == 201
+    return response.data["id"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("answer", ["accept", "decline"])
+def test_answering_an_invitation_marks_its_notification_read(api_client, team, answer):
+    org, _, people = team
+    invitee = make_user("new@x.com")
+    invitation_id = invite_through_api(api_client, org, people["admin"], invitee)
+    api_client.force_authenticate(user=invitee)
+    assert api_client.get(reverse("notification-unread-count")).data["unread"] == 1
+
+    assert api_client.post(reverse(f"my-invitation-{answer}", args=[invitation_id])).status_code == 200
+
+    assert api_client.get(reverse("notification-unread-count")).data["unread"] == 0
+
+
+@pytest.mark.django_db
+def test_cancelling_an_invitation_marks_its_notification_read(api_client, team):
+    org, _, people = team
+    invitee = make_user("new@x.com")
+    invitation_id = invite_through_api(api_client, org, people["admin"], invitee)
+
+    assert api_client.delete(reverse("invitation-detail", args=[org.id, invitation_id])).status_code == 204
+
+    api_client.force_authenticate(user=invitee)
+    assert api_client.get(reverse("notification-unread-count")).data["unread"] == 0
+
+
+@pytest.mark.django_db
+def test_answering_one_invitation_leaves_other_unread_notifications_alone(api_client, team):
+    org, _, people = team
+    invitee = make_user("new@x.com")
+    other_org = Organization.objects.create(name="Other")
+    join(other_org, people["admin"], Role.ADMIN)
+    first = invite_through_api(api_client, org, people["admin"], invitee)
+    invite_through_api(api_client, other_org, people["admin"], invitee)
+    api_client.force_authenticate(user=invitee)
+
+    api_client.post(reverse("my-invitation-decline", args=[first]))
+
+    assert api_client.get(reverse("notification-unread-count")).data["unread"] == 1

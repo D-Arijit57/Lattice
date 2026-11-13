@@ -12,11 +12,14 @@ import { AuthPage } from "@/pages/AuthPage"
 import { HomeRedirect } from "@/pages/HomeRedirect"
 import { WorkspaceOverview } from "@/pages/WorkspaceOverview"
 import { ApiKeysPage } from "@/pages/ApiKeysPage"
+import { MembersPage } from "@/pages/MembersPage"
+import { AccountPage } from "@/pages/AccountPage"
 import { ContentTypesList } from "@/pages/content-types/ContentTypesList"
 import { ContentTypeWorkspace } from "@/pages/content-types/ContentTypeWorkspace"
 import { ContentTypeOverview } from "@/pages/content-types/ContentTypeOverview"
 import { SchemaEditor } from "@/pages/content-types/SchemaEditor"
 import { SchemaVersions } from "@/pages/content-types/SchemaVersions"
+import { PublishRequests } from "@/pages/content-types/PublishRequests"
 import { EntriesList } from "@/pages/content-types/EntriesList"
 import { EntryEditor } from "@/pages/content-types/EntryEditor"
 import { ApiDocs } from "@/pages/content-types/ApiDocs"
@@ -31,15 +34,19 @@ export default function App() {
         <Route element={<RequireAuth />}>
           {/* "/" only decides which organization to open (or asks for a first one). */}
           <Route path="/" element={<HomeRedirect />} />
+          {/* Your own account: not inside any organization. */}
+          <Route path="/account" element={<AccountPage />} />
           {/* Everything else lives under an organization, like the API does. */}
           <Route path="/orgs/:orgId" element={<AppShell />}>
             <Route index element={<WorkspaceOverview />} />
             <Route path="content-types" element={<ContentTypesList />} />
             <Route path="api-keys" element={<ApiKeysPage />} />
+            <Route path="members" element={<MembersPage />} />
             <Route path="content-types/:slug" element={<ContentTypeWorkspace />}>
               <Route index element={<ContentTypeOverview />} />
               <Route path="schema" element={<SchemaEditor />} />
               <Route path="versions" element={<SchemaVersions />} />
+              <Route path="requests" element={<PublishRequests />} />
               <Route path="entries" element={<EntriesList />} />
               <Route path="api" element={<ApiDocs />} />
             </Route>

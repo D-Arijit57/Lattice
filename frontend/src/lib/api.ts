@@ -1,5 +1,6 @@
 import type {
   APIKey,
+  AppNotification,
   APIKeyCreated,
   BulkCreateResult,
   BulkEntryError,
@@ -9,7 +10,12 @@ import type {
   EntryPage,
   Field,
   FieldDataType,
+  Invitation,
+  Member,
   Organization,
+  PublishRequest,
+  PublishRequestStatus,
+  UserSearchResult,
 } from '@/types'
 
 // Vite inlines this at build time. Fall back to the same-origin /api so a
@@ -286,4 +292,110 @@ export const entries = {
       method: 'POST',
       body: JSON.stringify({ entries: rows }),
     }),
+};
+
+export const members = {
+  list: (orgId: number) => request<Member[]>(`${inOrg(orgId)}/members/`),
+
+  // Owner only. `id` is the membership id, not the user id.
+  changeRole: (orgId: number, id: number, roleId: number) =>
+    request<Member>(`${inOrg(orgId)}/members/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role_id: roleId }),
+    }),
+
+  remove: (orgId: number, id: number) =>
+    request<void>(`${inOrg(orgId)}/members/${id}/`, { method: 'DELETE' }),
+
+  // Owner only: the target becomes the owner, you become an admin.
+  transferOwnership: (orgId: number, id: number) =>
+    request<Member>(`${inOrg(orgId)}/members/${id}/transfer-ownership/`, { method: 'POST' }),
+};
+
+// Finds registered people who are not members yet. The server wants at least
+// 2 characters and returns at most 5 matches.
+export const userSearch = {
+  find: (orgId: number, query: string) =>
+    request<UserSearchResult[]>(`${inOrg(orgId)}/user-search/?q=${encodeURIComponent(query)}`),
+};
+
+export const invitations = {
+  // Pending invitations of this organization.
+  list: (orgId: number) => request<Invitation[]>(`${inOrg(orgId)}/invitations/`),
+
+  create: (orgId: number, data: { invited_user: number; role_id: number }) =>
+    request<Invitation>(`${inOrg(orgId)}/invitations/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // Keeps the row as history (status "cancelled").
+  cancel: (orgId: number, id: number) =>
+    request<void>(`${inOrg(orgId)}/invitations/${id}/`, { method: 'DELETE' }),
+};
+
+// Editors cannot publish a version themselves: they ask here, and an admin or
+// owner approves (which publishes the draft fields) or rejects.
+const inPublishRequests = (orgId: number, ctId: number) =>
+  `${inContentType(orgId, ctId)}/publish-requests`;
+
+export const publishRequests = {
+  // Newest first. `status` narrows the list, e.g. 'pending'.
+  list: (orgId: number, ctId: number, status?: PublishRequestStatus) =>
+    request<PublishRequest[]>(`${inPublishRequests(orgId, ctId)}/${status ? `?status=${status}` : ''}`),
+
+  // Includes `diff` while the request is pending.
+  get: (orgId: number, ctId: number, id: number) =>
+    request<PublishRequest>(`${inPublishRequests(orgId, ctId)}/${id}/`),
+
+  create: (orgId: number, ctId: number, note: string) =>
+    request<PublishRequest>(`${inPublishRequests(orgId, ctId)}/`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+
+  // Withdraws a pending request (the requester, or an admin).
+  cancel: (orgId: number, ctId: number, id: number) =>
+    request<void>(`${inPublishRequests(orgId, ctId)}/${id}/`, { method: 'DELETE' }),
+
+  // Publishes the draft fields as the next version.
+  approve: (orgId: number, ctId: number, id: number, note: string) =>
+    request<PublishRequest>(`${inPublishRequests(orgId, ctId)}/${id}/approve/`, {
+      method: 'POST',
+      body: JSON.stringify({ decision_note: note }),
+    }),
+
+  // The server insists on a reason.
+  reject: (orgId: number, ctId: number, id: number, note: string) =>
+    request<PublishRequest>(`${inPublishRequests(orgId, ctId)}/${id}/reject/`, {
+      method: 'POST',
+      body: JSON.stringify({ decision_note: note }),
+    }),
+};
+
+// The signed-in user's own notifications (not tied to one organization).
+export const notifications = {
+  // Newest first, at most 50. `unreadOnly` hides the ones already read.
+  list: (unreadOnly = false) =>
+    request<AppNotification[]>(`/notifications/${unreadOnly ? '?unread=true' : ''}`),
+
+  // Small and cheap: this is what the bell asks every so often.
+  unreadCount: () => request<{ unread: number }>('/notifications/unread-count/'),
+
+  markRead: (id: number) =>
+    request<AppNotification>(`/notifications/${id}/read/`, { method: 'POST' }),
+
+  markAllRead: () => request<{ marked: number }>('/notifications/read-all/', { method: 'POST' }),
+};
+
+// The invitations addressed to the signed-in user (the other side of
+// `invitations` above, which is what an admin sends).
+export const myInvitations = {
+  // Pending ones only.
+  list: () => request<Invitation[]>('/invitations/'),
+
+  // Accepting is what makes you a member, with the role you were invited as.
+  accept: (id: number) => request<Invitation>(`/invitations/${id}/accept/`, { method: 'POST' }),
+
+  decline: (id: number) => request<Invitation>(`/invitations/${id}/decline/`, { method: 'POST' }),
 };
