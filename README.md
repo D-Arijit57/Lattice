@@ -261,5 +261,4 @@ docker-compose.yml   Local full-stack run
 - No server-side token revocation yet: a leaked access token stays valid until it expires (15 minutes).
 - Forgot-password and GitHub/Google/Microsoft sign-in appear in the UI as "coming soon" and are not implemented.
 - Entries cannot be filtered or searched by field values, and fields cannot be renamed or edited (only archived).
-- The frontend has no automated tests yet.
 - On the free hosting tiers the CPU is small, so login and signup take 1-2 seconds because of password hashing.
