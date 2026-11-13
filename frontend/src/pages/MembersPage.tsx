@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { UserPlus } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { RoleBadge } from "@/components/RoleBadge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
@@ -14,14 +14,6 @@ import { useApi } from "@/lib/use-api"
 import { useOrgId } from "@/lib/use-org"
 import { formatDate } from "@/lib/utils"
 import type { Invitation, Member } from "@/types"
-
-// Badge colours per role, so the table can be scanned at a glance.
-const ROLE_BADGE: Record<number, "default" | "warning" | "secondary" | "outline"> = {
-  [ROLE.OWNER]: "default",
-  [ROLE.ADMIN]: "warning",
-  [ROLE.EDITOR]: "secondary",
-  [ROLE.VIEWER]: "outline",
-}
 
 // The guard is a separate component so the content below (which loads the
 // member list) never starts for someone the API would refuse.
@@ -132,7 +124,7 @@ function MembersContent() {
                           ))}
                         </select>
                       ) : (
-                        <Badge variant={ROLE_BADGE[member.role_id] ?? "outline"}>{roleLabel(member.role_id)}</Badge>
+                        <RoleBadge role={member.role_id} />
                       )}
                     </TableCell>
                     <TableCell className="text-neutral-500">{formatDate(member.created_at)}</TableCell>
@@ -185,7 +177,7 @@ function MembersContent() {
                     <p className="text-xs text-neutral-500">{invitation.invited_user_email}</p>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={ROLE_BADGE[invitation.role_id] ?? "outline"}>{roleLabel(invitation.role_id)}</Badge>
+                    <RoleBadge role={invitation.role_id} />
                   </TableCell>
                   <TableCell className="text-neutral-500">{invitation.invited_by_name}</TableCell>
                   <TableCell className="text-neutral-500">{formatDate(invitation.created_at)}</TableCell>
