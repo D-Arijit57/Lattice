@@ -3,7 +3,7 @@ from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from accounts.models import Organization, OrganizationMembership
+from accounts.models import Organization, OrganizationMembership, Role
 from content.models import ContentType, ContentTypeVersion, Entry, Field
 from content.services.entry_validation import validate_entry_data
 
@@ -69,17 +69,44 @@ class OrganizationScopedViewSet(
             except Organization.DoesNotExist:
                 raise NotFound("Organization not found.")
 
-            is_member = OrganizationMembership.objects.filter(
+            # .first() returns the membership row (or None), so we get the
+            # role from the same query that proves the user is a member.
+            membership = OrganizationMembership.objects.filter(
                 user=self.request.user,
                 organization=organization,
-            ).exists()
-            if not is_member:
+            ).first()
+            if membership is None:
                 raise PermissionDenied(
                     "You are not a member of this organization."
                 )
 
             self._organization = organization
+            self._membership = membership
         return self._organization
+
+    def initial(self, request, *args, **kwargs):
+        # DRF calls initial() after authentication but BEFORE it validates the
+        # body, so the role check in check_role() runs first (403, not 400).
+        super().initial(request, *args, **kwargs)
+        self.check_role()
+
+    def check_role(self):
+        """
+        Each ViewSet overrides this to say which actions need which role, by
+        calling self.require_role(...). The default requires nothing beyond
+        membership, which get_organization() already enforces.
+        """
+
+    def require_role(self, minimum_role):
+        """
+        Raise 403 unless the caller's role is at least `minimum_role`.
+        Roles are ordered numbers (VIEWER=0 < ... < OWNER=3), so >= works.
+        """
+        self.get_organization()  # makes sure self._membership is loaded
+        if self._membership.role_id < minimum_role:
+            raise PermissionDenied(
+                "Your role does not allow this action."
+            )
 
 
 class ContentTypeScopedViewSet(OrganizationScopedViewSet):
@@ -116,6 +143,14 @@ class ContentTypeViewSet(OrganizationScopedViewSet):
     """
     # Configuration: tells DRF which serializer to use for this ViewSet.
     serializer_class = ContentTypeSerializer
+
+    # Changing the schema (new / removed content types) needs ADMIN or higher.
+    ADMIN_ACTIONS = {"create", "archive"}
+
+    def check_role(self):
+        if self.action in self.ADMIN_ACTIONS:
+            self.require_role(Role.ADMIN)
+
     # querySet(), get_serializer_context() are bascially the hooks or the decisions provided by us
     # the DRF controls the overall workflow
     
@@ -175,6 +210,12 @@ class ContentTypeVersionViewSet(ContentTypeScopedViewSet):
 
     serializer_class = ContentTypeVersionSerializer
 
+    # Publishing a version freezes the schema: ADMIN or higher.
+    # (Editors will request a publish instead; see the publish-request phase.)
+    def check_role(self):
+        if self.action == "create":
+            self.require_role(Role.ADMIN)
+
     def get_queryset(self):
         content_type = self.get_content_type()
         return (
@@ -206,6 +247,15 @@ class FieldViewSet(ContentTypeScopedViewSet):
     """
 
     serializer_class = FieldSerializer
+
+    # Live fields are the draft schema: nothing takes effect until a version is
+    # published (and that needs ADMIN, or an admin's approval). So EDITOR may
+    # add and archive fields.
+    EDITOR_ACTIONS = {"create", "archive"}
+
+    def check_role(self):
+        if self.action in self.EDITOR_ACTIONS:
+            self.require_role(Role.EDITOR)
 
     def get_queryset(self):
         content_type = self.get_content_type()
@@ -251,6 +301,17 @@ class EntryViewSet(mixins.UpdateModelMixin, ContentTypeScopedViewSet):
     
     # custom pagination mechanism configuration
     pagination_class = EntryCursorPagination
+
+    # Every action that changes an entry needs EDITOR or higher; list and
+    # retrieve need only membership.
+    EDITOR_ACTIONS = {
+        "create", "bulk_create", "update", "partial_update",
+        "archive", "archive_all", "restore",
+    }
+
+    def check_role(self):
+        if self.action in self.EDITOR_ACTIONS:
+            self.require_role(Role.EDITOR)
 
     def get_queryset(self):
         content_type = self.get_content_type()
@@ -298,6 +359,7 @@ class EntryViewSet(mixins.UpdateModelMixin, ContentTypeScopedViewSet):
             entry.archived_at = None
             entry.save(update_fields=["archived_at", "updated_at"])
         return Response(EntrySerializer(entry).data)
+    
     def perform_create(self, serializer):
         # while you perform the creation always use atomicity
         with transaction.atomic():

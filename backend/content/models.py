@@ -1,6 +1,6 @@
 from django.db import models
 
-from accounts.models import Organization
+from accounts.models import Organization, User
 
 # Content Type
 class ContentType(models.Model):
@@ -133,3 +133,51 @@ class Field(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.content_type})"
+
+# An editor cannot publish a version on their own. They ask for it here, and an
+# admin or owner approves (which publishes the live fields as the next version)
+# or rejects. The live Fields are the draft; the request only carries the
+# editor's note, the reviewer sees what changed by comparing the draft with the
+# latest published version at the moment they decide.
+class PublishRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+        CANCELLED = "cancelled", "Cancelled"
+
+    content_type = models.ForeignKey(
+        ContentType, on_delete=models.PROTECT, related_name="publish_requests"
+    )
+    requested_by = models.ForeignKey(
+        User, null=True, on_delete=models.SET_NULL, related_name="publish_requests"
+    )
+    note = models.CharField(max_length=500, blank=True)
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING
+    )
+    decided_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="publish_decisions",
+    )
+    decision_note = models.CharField(max_length=500, blank=True)
+    # the version this request produced, set only when it was approved
+    version = models.OneToOneField(
+        ContentTypeVersion, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="publish_request",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            # one open request per content type at a time
+            models.UniqueConstraint(
+                fields=["content_type"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_publish_request",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.content_type} publish request ({self.status})"

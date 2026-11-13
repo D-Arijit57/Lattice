@@ -10,12 +10,14 @@ import { AddFieldDialog } from "@/components/forms/AddFieldDialog"
 import { fields } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import { useOrgId, useOrgPath } from "@/lib/use-org"
+import { useCan } from "@/lib/org-context"
 import { useContentType } from "./ContentTypeWorkspace"
 
 export function SchemaEditor() {
   const contentType = useContentType()
   const orgId = useOrgId()
   const orgPath = useOrgPath()
+  const can = useCan()
   const [addOpen, setAddOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -38,7 +40,9 @@ export function SchemaEditor() {
               </Link>.
             </p>
           </div>
-          <Button onClick={() => setAddOpen(true)}><Plus className="w-4 h-4 mr-2" /> Add field</Button>
+          {can("editFields") && (
+            <Button onClick={() => setAddOpen(true)}><Plus className="w-4 h-4 mr-2" /> Add field</Button>
+          )}
         </div>
 
         {fieldList.loading && !fieldList.data && <LoadingState />}
@@ -47,8 +51,8 @@ export function SchemaEditor() {
           <div className="bg-white rounded-xl border border-neutral-200 shadow-sm">
             <EmptyState
               title="No fields yet"
-              description="Add the first field, for example a title or a price."
-              action={<Button onClick={() => setAddOpen(true)}>Add field</Button>}
+              description={can("editFields") ? "Add the first field, for example a title or a price." : "An editor, admin or owner can add the first field."}
+              action={can("editFields") ? <Button onClick={() => setAddOpen(true)}>Add field</Button> : undefined}
             />
           </div>
         )}
@@ -112,13 +116,15 @@ export function SchemaEditor() {
                 <input type="checkbox" checked={selected.required} readOnly disabled className="rounded border-neutral-300 w-4 h-4" />
                 Required field
               </label>
-              <Button
-                variant="outline"
-                className="w-full text-red-600 hover:text-red-700"
-                onClick={() => setConfirmingDelete(true)}
-              >
-                <Trash2 className="w-4 h-4 mr-2" /> Delete field
-              </Button>
+              {can("editFields") && (
+                <Button
+                  variant="outline"
+                  className="w-full text-red-600 hover:text-red-700"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" /> Delete field
+                </Button>
+              )}
             </div>
           </div>
         </div>

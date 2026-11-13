@@ -8,12 +8,14 @@ import { NewContentTypeDialog } from "@/components/forms/NewContentTypeDialog"
 import { contentTypes, organizations } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import { useOrgId, useOrgPath } from "@/lib/use-org"
+import { useCan } from "@/lib/org-context"
 import { formatDate } from "@/lib/utils"
 
 export function WorkspaceOverview() {
   const orgId = useOrgId()
   const orgPath = useOrgPath()
   const navigate = useNavigate()
+  const can = useCan()
   const [newOpen, setNewOpen] = useState(false)
 
   const organization = useApi(() => organizations.get(orgId), [orgId])
@@ -49,9 +51,11 @@ export function WorkspaceOverview() {
         <div>
           <div className="flex items-center justify-between mb-4 mt-8">
             <h3 className="text-lg font-semibold text-neutral-900">Content Types</h3>
-            <Button size="sm" onClick={() => setNewOpen(true)}>
-              <Plus className="w-4 h-4 mr-1" /> New Content Type
-            </Button>
+            {can("manageContentTypes") && (
+              <Button size="sm" onClick={() => setNewOpen(true)}>
+                <Plus className="w-4 h-4 mr-1" /> New Content Type
+              </Button>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden shadow-sm">
@@ -60,8 +64,8 @@ export function WorkspaceOverview() {
             {types.data && types.data.length === 0 && (
               <EmptyState
                 title="No content types yet"
-                description="Create one to start defining fields and adding entries."
-                action={<Button onClick={() => setNewOpen(true)}>New Content Type</Button>}
+                description={can("manageContentTypes") ? "Create one to start defining fields and adding entries." : "An admin or owner can create the first one."}
+                action={can("manageContentTypes") ? <Button onClick={() => setNewOpen(true)}>New Content Type</Button> : undefined}
               />
             )}
             {types.data && types.data.length > 0 && (

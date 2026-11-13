@@ -9,10 +9,12 @@ import { NewContentTypeDialog } from "@/components/forms/NewContentTypeDialog"
 import { contentTypes } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import { useOrgId, useOrgPath } from "@/lib/use-org"
+import { useCan } from "@/lib/org-context"
 import { formatDate } from "@/lib/utils"
 
 export function ContentTypesList() {
   const orgId = useOrgId()
+  const can = useCan()
   const orgPath = useOrgPath()
   const navigate = useNavigate()
   const [search, setSearch] = useState("")
@@ -34,7 +36,9 @@ export function ContentTypesList() {
           <h2 className="text-2xl font-bold tracking-tight text-neutral-900">Content Types</h2>
           <p className="text-neutral-500 mt-1">Define and manage the structured data models used by your organization.</p>
         </div>
-        <Button onClick={() => setNewOpen(true)}><Plus className="w-4 h-4 mr-2" /> New Content Type</Button>
+        {can("manageContentTypes") && (
+          <Button onClick={() => setNewOpen(true)}><Plus className="w-4 h-4 mr-2" /> New Content Type</Button>
+        )}
       </div>
 
       <div className="bg-white border border-neutral-200 shadow-sm rounded-xl overflow-hidden">
@@ -56,8 +60,8 @@ export function ContentTypesList() {
         {types.data && types.data.length === 0 && (
           <EmptyState
             title="No content types yet"
-            description="Create one to start defining fields and adding entries."
-            action={<Button onClick={() => setNewOpen(true)}>New Content Type</Button>}
+            description={can("manageContentTypes") ? "Create one to start defining fields and adding entries." : "An admin or owner can create the first one."}
+            action={can("manageContentTypes") ? <Button onClick={() => setNewOpen(true)}>New Content Type</Button> : undefined}
           />
         )}
         {types.data && types.data.length > 0 && (

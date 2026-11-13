@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from accounts.models import Organization
+from accounts.models import Organization, OrganizationMembership
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -7,11 +7,26 @@ class OrganizationSerializer(serializers.ModelSerializer):
     # field list for us. We only spell fields out here when we want to
     # change their behaviour (make them read-only, rename, nest, etc.).
 
+    # The caller's role in this organization (0 viewer .. 3 owner). Read-only.
+    my_role = serializers.SerializerMethodField()
+
+    def get_my_role(self, organization):
+        # The list view annotates this in its query. A freshly created or
+        # retrieved org may not have it, so fall back to one lookup.
+        role = getattr(organization, "my_role", None)
+        if role is None:
+            membership = OrganizationMembership.objects.filter(
+                organization=organization, user=self.context["request"].user
+            ).first()
+            role = membership.role_id if membership else None
+        return role
+
     class Meta:
         model = Organization
         fields = [
             "id",
             "name",
+            "my_role",
             "created_at",
             "updated_at",
         ]

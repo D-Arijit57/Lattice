@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import OuterRef, Subquery
 from django.utils import timezone
 from rest_framework import mixins, permissions, viewsets, status
 from rest_framework.exceptions import NotFound, PermissionDenied
@@ -6,11 +7,8 @@ from rest_framework.response import Response
 from accounts.models import Organization, OrganizationMembership, APIKey, hash_api_key
 from api.accounts.serializers.org_serializer import OrganizationSerializer
 from api.accounts.serializers.api_key_serializer import APIKeySerializer
+from accounts.models import Role
 import secrets
-
-# Placeholder until a real Role model exists. The person who creates an
-# organization is stored as its first member with this role id.
-OWNER_ROLE_ID = 1
 
 
 class OrganizationScopedViewSet(
@@ -41,7 +39,7 @@ class OrganizationScopedViewSet(
             OrganizationMembership.objects.create(
                 user=self.request.user,
                 organization=organization,
-                role_id=OWNER_ROLE_ID,
+                role_id=Role.OWNER,
             )
 
 
@@ -49,18 +47,31 @@ class OrganizationScopedViewSet(
         # Reverse-relation lookup: OrganizationMembership.organization has
         # related_name="memberships", so we can filter Organization by
         # walking backwards across that FK to the requesting user.
+        # my_role: the caller's role in each org, computed in the same query,
+        # so the frontend can show or hide buttons without extra requests.
+        my_role = (
+            OrganizationMembership.objects
+            .filter(organization=OuterRef("pk"), user=self.request.user)
+            .values("role_id")[:1]
+        )
         return (
             Organization.objects
             .filter(memberships__user=self.request.user, archived_at__isnull=True)
+            .annotate(my_role=Subquery(my_role))
             .order_by("name")
         )
 
     def archive(self, request, *args, **kwargs):
         # get_object() goes through get_queryset(), so only a live organization
         # the caller is a member of can be found: anything else is a 404.
-        # There are no roles yet, so any member may archive it. Once roles
-        # exist this should be restricted to owners.
+        # Only an owner may archive the organization. get_object() runs first,
+        # so someone who is not a member still gets a 404, not a 403.
         organization = self.get_object()
+        membership = OrganizationMembership.objects.get(
+            user=request.user, organization=organization
+        )
+        if membership.role_id < Role.OWNER:
+            raise PermissionDenied("Only an owner can delete the organization.")
         organization.archived_at = timezone.now()
         organization.save(update_fields=["archived_at", "updated_at"])
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -84,17 +95,29 @@ class APIKeyViewSet(OrganizationScopedViewSet, mixins.DestroyModelMixin):
             except Organization.DoesNotExist:
                 raise NotFound("Organization not found.")
 
-            is_member = OrganizationMembership.objects.filter(
+            membership = OrganizationMembership.objects.filter(
                 user=self.request.user,
                 organization=organization,
-            ).exists()
-            if not is_member:
+            ).first()
+            if membership is None:
                 raise PermissionDenied(
                     "You are not a member of this organization."
                 )
 
             self._organization = organization
+            self._membership = membership
         return self._organization
+
+    def initial(self, request, *args, **kwargs):
+        # Runs after authentication but before the body is validated.
+        super().initial(request, *args, **kwargs)
+        self.check_role()
+
+    def check_role(self):
+        # Managing API keys (list, create, revoke) is ADMIN or higher.
+        self.get_organization()  # 404 / not-a-member first
+        if self._membership.role_id < Role.ADMIN:
+            raise PermissionDenied("Your role does not allow this action.")
 
     def get_queryset(self):
         return APIKey.objects.filter(

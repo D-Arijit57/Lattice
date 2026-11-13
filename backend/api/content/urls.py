@@ -3,6 +3,7 @@ from django.urls import path
 # .as_view() connects the HTTP methods to these actions for a specific URL.
 # For example: GET → list(), POST → create(), GET with <pk> → retrieve().
 
+from api.content.publish_views import PublishRequestViewSet
 from api.content.views import (
     ContentTypeViewSet,
     ContentTypeVersionViewSet,
@@ -32,6 +33,11 @@ entry_bulk_create = EntryViewSet.as_view({"post": "bulk_create"})
 
 field_list = FieldViewSet.as_view({"get": "list", "post": "create"})
 field_detail = FieldViewSet.as_view({"get": "retrieve", "delete": "archive"})
+
+publish_request_list = PublishRequestViewSet.as_view({"get": "list", "post": "create"})
+publish_request_detail = PublishRequestViewSet.as_view({"get": "retrieve", "delete": "cancel"})
+publish_request_approve = PublishRequestViewSet.as_view({"post": "approve"})
+publish_request_reject = PublishRequestViewSet.as_view({"post": "reject"})
 
 urlpatterns = [
     path(
@@ -83,5 +89,25 @@ urlpatterns = [
         "organizations/<int:organization_id>/content-types/<int:content_type_id>/fields/<int:pk>/",
         field_detail,
         name="field-detail",
+    ),
+    path(
+        "organizations/<int:organization_id>/content-types/<int:content_type_id>/publish-requests/",
+        publish_request_list,
+        name="publish-request-list",
+    ),
+    path(
+        "organizations/<int:organization_id>/content-types/<int:content_type_id>/publish-requests/<int:pk>/",
+        publish_request_detail,
+        name="publish-request-detail",
+    ),
+    path(
+        "organizations/<int:organization_id>/content-types/<int:content_type_id>/publish-requests/<int:pk>/approve/",
+        publish_request_approve,
+        name="publish-request-approve",
+    ),
+    path(
+        "organizations/<int:organization_id>/content-types/<int:content_type_id>/publish-requests/<int:pk>/reject/",
+        publish_request_reject,
+        name="publish-request-reject",
     ),
 ]

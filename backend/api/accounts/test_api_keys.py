@@ -6,14 +6,14 @@ Delivery-side behaviour (what a key can read) is in api/delivery/tests.py.
 import pytest
 from django.urls import reverse
 
-from accounts.models import APIKey, Organization, OrganizationMembership, hash_api_key
+from accounts.models import APIKey, Organization, OrganizationMembership, Role, hash_api_key
 
 
 @pytest.fixture
 def member_org(user):
     # An Organization that `user` belongs to (role_id=1 is the owner role).
     organization = Organization.objects.create(name="Acme")
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
     return organization
 
 
