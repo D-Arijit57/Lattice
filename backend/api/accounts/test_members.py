@@ -192,9 +192,10 @@ def test_cannot_invite_a_member_or_someone_already_invited(api_client, org):
 
 
 @pytest.mark.django_db
-def test_admin_lists_and_cancels_pending_invitations(api_client, org):
+@pytest.mark.parametrize("role", [Role.ADMIN, Role.OWNER])
+def test_admin_and_owner_list_and_cancel_pending_invitations(api_client, org, role):
     me = make_user("me@x.com")
-    join(org, me, Role.ADMIN)
+    join(org, me, role)
     target = make_user("t@x.com")
     invitation = Invitation.objects.create(
         organization=org, invited_user=target, invited_by=me, role_id=Role.EDITOR

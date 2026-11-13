@@ -13,7 +13,7 @@ from accounts.models import (
     Role,
     User,
 )
-from accounts.services.notifications import notify
+from accounts.services.notifications import mark_invitation_notifications_read, notify
 from api.accounts.rules import can_remove
 from api.accounts.serializers.member_serializers import (
     InvitationSerializer,
@@ -212,6 +212,7 @@ class InvitationViewSet(
         instance.status = Invitation.Status.CANCELLED
         instance.responded_at = timezone.now()
         instance.save(update_fields=["status", "responded_at"])
+        mark_invitation_notifications_read(instance)
 
 
 class MyInvitationViewSet(
@@ -258,6 +259,7 @@ class MyInvitationViewSet(
             invitation.status = Invitation.Status.ACCEPTED
             invitation.responded_at = timezone.now()
             invitation.save(update_fields=["status", "responded_at"])
+            mark_invitation_notifications_read(invitation)
         return Response(InvitationSerializer(invitation).data)
 
     def decline(self, request, *args, **kwargs):
@@ -265,4 +267,5 @@ class MyInvitationViewSet(
         invitation.status = Invitation.Status.DECLINED
         invitation.responded_at = timezone.now()
         invitation.save(update_fields=["status", "responded_at"])
+        mark_invitation_notifications_read(invitation)
         return Response(InvitationSerializer(invitation).data)

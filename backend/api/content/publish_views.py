@@ -69,6 +69,8 @@ class PublishRequestViewSet(ContentTypeScopedViewSet):
         return {
             "organization_id": self.get_organization().pk,
             "content_type_id": publish_request.content_type_id,
+            # the frontend's URLs use the slug, so it can link without another lookup
+            "content_type_slug": self.get_content_type().slug,
             "publish_request_id": publish_request.pk,
         }
 
