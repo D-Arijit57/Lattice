@@ -37,11 +37,14 @@ A multi-tenant, headless content engine. Organizations define their own content 
 
 | Concept | What it is |
 |---|---|
-| **Organization** | An isolated tenant. A user can belong to many; every request is scoped to one and checked against the caller's membership. |
+| **Organization** | An isolated tenant. A user can belong to many; every request is scoped to one and checked against the caller's membership. Each member has a [role](#roles). |
 | **Content type** | A kind of content (`name`, `slug`) that owns a set of **fields** (`string`, `number`, `boolean`, `date`, optionally required). |
 | **Version** | An immutable JSON Schema generated from a content type's fields. Publishing a new version never changes an old one. |
 | **Entry** | The actual data, stored as JSONB, validated against the schema of the version it was created under, and pinned to that version. |
 | **API key** | A read-only credential an organization issues so an outside app can fetch its content without a user login. |
+| **Invitation** | An offer to join an organization with a role. It does nothing until the invitee accepts. |
+| **Publish request** | An editor's ask for the draft fields to be published as the next version. An admin or owner approves or rejects it. |
+| **Notification** | An in-app message (invitation, publish requested, approved, rejected) shown in the bell. |
 
 Validation errors are returned per field, all at once:
 
@@ -51,7 +54,7 @@ Validation errors are returned per field, all at once:
 
 ![Data model](docs/data-model.png)
 
-`users` and `organizations` are many-to-many through `organization_memberships` (unique per user and organization). An organization owns `content_types` and `api_keys`; a content type owns `fields` and `content_type_versions`; an `entry` references a version, not the content type directly.
+`users` and `organizations` are many-to-many through `organization_memberships` (unique per user and organization). `organization_memberships.role_id` holds the role (0 viewer, 1 editor, 2 admin, 3 owner). An organization owns `content_types`, `api_keys` and `invitations`; a content type owns `fields`, `content_type_versions` and `publish_requests`; an `entry` references a version, not the content type directly. `notifications` belong to a user. The diagram in `docs/` predates roles, invitations, publish requests and notifications.
 
 ## Quick start
 
@@ -143,11 +146,13 @@ Every member has one role per organization. A higher role can do everything a lo
 | **Admin** | Also create and archive content types, publish a version directly or approve an editor's publish request, manage API keys, invite and remove members. |
 | **Owner** | Also change roles, hand over ownership and delete the organization. Exactly one per organization. |
 
-The API enforces this: a role that is too low gets `403 {"detail": "Your role does not allow this action."}`, checked before the request body is validated. The web app also hides the buttons a role cannot use.
+The API enforces this: a role that is too low gets `403 {"detail": "Your role does not allow this action."}`, checked before the request body is validated. The web app also hides the buttons a role cannot use, and shows each role as a soft colour label (owner violet, admin blue, editor green, viewer grey).
 
 **Publishing.** An editor's field changes stay a draft until a version is published. The editor sends a *publish request* from the Versions tab; an admin or owner sees what would change (added, removed and changed fields), then approves, which publishes the next version, or rejects with a reason. Existing entries stay on the version they were saved under.
 
 **Members.** Admins and the owner find registered users with the search on the Members page and invite them as viewer, editor or admin. The invitee accepts on their account page (or from the notification bell), and only then becomes a member. A new hire therefore has to sign up first. Notifications are in-app only; there is no email.
+
+**People with no organization.** Someone who belongs to none (for example a new hire who has just signed up) lands on a dashboard that lists their invitations (organization, role, who invited them, accept or decline) and lets them create an organization of their own. Someone who belongs to at least one never sees it: an organization URL they are not in sends them to their first organization. The account page (`/account`) shows your role in each organization and your pending invitations.
 
 **Pagination.** Entry lists use cursor pagination: 50 per page, newest first, stable under inserts. Follow the `next` URL in the response.
 
@@ -241,12 +246,14 @@ Vercel and Render redeploy from `master` automatically.
 ```text
 backend/
   content_engine/    Django settings, root URLs, WSGI
-  accounts/          User, Organization, OrganizationMembership, APIKey models
-  content/           ContentType, Field, ContentTypeVersion, Entry models
-  content/services/  schema_generation, versioning, entry_validation
-  api/               DRF views, serializers, URLs: auth, accounts, content, delivery, monitoring
+  accounts/          User, Organization, OrganizationMembership (with role), APIKey, Invitation, Notification models
+  accounts/services/ notifications (write notifications, mark invitation ones read)
+  content/           ContentType, Field, ContentTypeVersion, Entry, PublishRequest models
+  content/services/  schema_generation, schema_diff, versioning, entry_validation
+  api/               DRF views, serializers, URLs: auth, accounts (members, invitations, notifications), content (publish requests), delivery, monitoring
+  content_engine/settings_test.py   settings pytest uses: local Postgres only
 frontend/
-  src/               React app (pages, components, lib/api.ts client)
+  src/               React app (pages, components, lib/api.ts client, lib/roles.ts role rules)
   api/proxy.ts       Vercel function forwarding /api/* to the backend
   vercel.json        Rewrites and function region
 docs/                Data model diagram
@@ -260,5 +267,8 @@ docker-compose.yml   Local full-stack run
 - Rate-limit counters live in each Gunicorn worker's memory, so with several workers the effective limit is higher than configured. A shared cache (Redis) would fix this.
 - No server-side token revocation yet: a leaked access token stays valid until it expires (15 minutes).
 - Forgot-password and GitHub/Google/Microsoft sign-in appear in the UI as "coming soon" and are not implemented.
+- Only people who already have an account can be invited, so a new hire signs up first and tells an admin. There is no invite by email and no email delivery. The invite search lets any admin find any registered user by name or email (5 results, 2+ characters).
+- Notifications appear within 30 seconds (the bell polls; there is no push) and are never deleted.
+- Nobody can leave an organization on their own, and the inviter is not told when an invitation is answered.
 - Entries cannot be filtered or searched by field values, and fields cannot be renamed or edited (only archived).
 - On the free hosting tiers the CPU is small, so login and signup take 1-2 seconds because of password hashing.
