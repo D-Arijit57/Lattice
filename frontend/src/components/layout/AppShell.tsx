@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom"
-import { LayoutDashboard, Database, Search, Plus, Check, KeyRound, Trash2 } from "lucide-react"
+import { LayoutDashboard, Database, Search, Plus, Check, KeyRound, Trash2, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { NotificationBell } from "@/components/layout/NotificationBell"
 import { CreateOrganizationForm } from "@/components/forms/CreateOrganizationForm"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { useAuth } from "@/lib/auth-context"
@@ -52,6 +53,7 @@ function Sidebar({
     <div className="hidden md:flex h-screen w-64 flex-col border-r border-neutral-200 bg-white shrink-0">
       <div className="p-4 flex items-center justify-between">
         <h1 className="font-logo text-2xl text-neutral-900 leading-none">Lattice</h1>
+        <NotificationBell />
       </div>
 
       <div className="px-4 py-2">
@@ -151,10 +153,19 @@ function Sidebar({
           </NavLink>
         </nav>
 
-        <div className="mt-6 px-4 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
-          Settings
-        </div>
+        {/* Only draw the heading when there is at least one link under it. */}
+        {(can("manageMembers") || can("manageApiKeys")) && (
+          <div className="mt-6 px-4 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
+            Settings
+          </div>
+        )}
         <nav className="grid gap-1 px-3">
+          {can("manageMembers") && (
+            <NavLink to={`${base}/members`} className={({ isActive }) => navLinkClass(isActive)}>
+              <Users className="h-4 w-4" />
+              Members
+            </NavLink>
+          )}
           {can("manageApiKeys") && (
             <NavLink to={`${base}/api-keys`} className={({ isActive }) => navLinkClass(isActive)}>
               <KeyRound className="h-4 w-4" />
@@ -181,6 +192,7 @@ function Sidebar({
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate("/account")}>Account and invitations</DropdownMenuItem>
             <DropdownMenuItem onClick={() => logout()}>Log out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -217,7 +229,7 @@ export function AppShell() {
       <Sidebar current={current} all={orgs.data ?? []} onOrganizationCreated={orgs.reload} />
       <main className="flex-1 overflow-y-auto">
         {/* Every page below reads the organization and the caller's role from here. */}
-        <OrgProvider organization={current}>
+        <OrgProvider organization={current} reload={orgs.reload}>
           <Outlet />
         </OrgProvider>
       </main>

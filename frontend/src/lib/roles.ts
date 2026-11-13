@@ -49,3 +49,17 @@ export type Permission = keyof typeof MINIMUM_ROLE
 export function roleCan(role: number, permission: Permission): boolean {
   return role >= MINIMUM_ROLE[permission]
 }
+
+// Roles you may hand out when inviting or changing a role. Owner is never on
+// the list: ownership is transferred, not assigned.
+export const ASSIGNABLE_ROLES = [ROLE.VIEWER, ROLE.EDITOR, ROLE.ADMIN] as const
+
+// May `actorRole` remove a member who has `targetRole`? Mirrors can_remove()
+// in backend/api/accounts/rules.py: the owner can remove anyone but the owner
+// row, an admin can remove editors and viewers.
+export function canRemoveMember(actorRole: number, targetRole: number): boolean {
+  if (targetRole === ROLE.OWNER) return false
+  if (actorRole === ROLE.OWNER) return true
+  if (actorRole === ROLE.ADMIN) return targetRole <= ROLE.EDITOR
+  return false
+}

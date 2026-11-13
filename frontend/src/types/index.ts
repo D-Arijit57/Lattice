@@ -103,3 +103,105 @@ export type APIKey = {
 export type APIKeyCreated = APIKey & {
   key: string;
 };
+
+// One row of GET /organizations/{org}/members/. `id` is the membership id (use
+// it in URLs); `user_id` is the person.
+export type Member = {
+  id: number;
+  user_id: number;
+  name: string;
+  email: string;
+  role_id: number;
+  created_at: string;
+};
+
+// A registered user found by the invite search. Only these three fields are
+// ever exposed.
+export type UserSearchResult = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
+
+export type Invitation = {
+  id: number;
+  organization: number;
+  organization_name: string;
+  invited_user: number;
+  invited_user_name: string;
+  invited_user_email: string;
+  invited_by_name: string;
+  role_id: number;
+  status: InvitationStatus;
+  created_at: string;
+  responded_at: string | null;
+};
+
+// One field as the schema diff describes it. `type` is the JSON Schema type and
+// `format` is "date" or "date-time" for those two field types, else null.
+export type DiffedField = {
+  name: string;
+  type: string;
+  format: string | null;
+  required: boolean;
+};
+
+export type FieldShape = Omit<DiffedField, 'name'>;
+
+// What a draft changes compared with the latest published version.
+export type SchemaDiff = {
+  added: DiffedField[];
+  removed: DiffedField[];
+  changed: { name: string; from: FieldShape; to: FieldShape }[];
+};
+
+export type PublishRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export type PublishRequest = {
+  id: number;
+  content_type_id: number;
+  note: string;
+  status: PublishRequestStatus;
+  requested_by: number | null;
+  requested_by_name: string | null;
+  decided_by: number | null;
+  decided_by_name: string | null;
+  decision_note: string;
+  // the version an approved request produced
+  version_number: number | null;
+  // Only filled by GET .../publish-requests/{id}/ and only while pending; the
+  // list never carries it.
+  diff: SchemaDiff | null;
+  created_at: string;
+  decided_at: string | null;
+};
+
+export type NotificationKind =
+  | 'invitation'
+  | 'publish_requested'
+  | 'publish_approved'
+  | 'publish_rejected';
+
+// `payload` holds the ids needed to link to what the notification is about.
+// Which keys exist depends on `kind`, and all of them are optional here
+// because an old notification may lack a newer key.
+export type NotificationPayload = {
+  organization_id?: number;
+  invitation_id?: number;
+  content_type_id?: number;
+  content_type_slug?: string;
+  publish_request_id?: number;
+};
+
+export type AppNotification = {
+  id: number;
+  kind: NotificationKind;
+  message: string;
+  payload: NotificationPayload;
+  organization: number | null;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
+};

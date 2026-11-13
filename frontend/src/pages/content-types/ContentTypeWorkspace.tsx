@@ -97,6 +97,11 @@ export function ContentTypeWorkspace() {
           <NavLink to={`${basePath}/versions`} className={({ isActive }) => tabClass(isActive)}>
             Versions
           </NavLink>
+          {can("requestPublish") && (
+            <NavLink to={`${basePath}/requests`} className={({ isActive }) => tabClass(isActive)}>
+              Requests
+            </NavLink>
+          )}
           <NavLink
             to={`${basePath}/entries`}
             className={({ isActive }) => tabClass(isActive || location.pathname.includes('/entries/'))}

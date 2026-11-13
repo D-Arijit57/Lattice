@@ -7,6 +7,7 @@ import { errorMessage, versions } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import { useOrgId } from "@/lib/use-org"
 import { useCan } from "@/lib/org-context"
+import { RequestPublishButton } from "@/components/forms/RequestPublishButton"
 import { formatDateTime } from "@/lib/utils"
 import { useContentType } from "./ContentTypeWorkspace"
 
@@ -49,10 +50,13 @@ export function SchemaVersions() {
             Each version is a frozen snapshot of the fields. Entries are validated against the newest one.
           </p>
         </div>
-        {can("publishVersion") && (
+        {can("publishVersion") ? (
           <Button onClick={publish} disabled={publishing}>
             <Plus className="w-4 h-4 mr-2" /> {publishing ? "Publishing..." : "New version"}
           </Button>
+        ) : (
+          // Editors cannot publish: they ask an admin to. Viewers see nothing.
+          can("requestPublish") && <RequestPublishButton contentType={contentType} />
         )}
       </div>
 
