@@ -108,17 +108,21 @@ docker compose up --build
 
 ## API reference
 
-All routes are under `/api/`, use JSON, and return standard DRF error bodies (`{"detail": "..."}` or per-field errors). V1 exposes create and read operations (plus API key revoke); there is no update or delete for content.
+All routes are under `/api/`, use JSON, and return standard DRF error bodies (`{"detail": "..."}` or per-field errors). Reads and creates are available everywhere; entries can also be edited, and entries, fields, content types and organizations can be archived (soft delete). Which role may call what is under [Roles](#roles).
 
 | Area | Endpoints |
 |---|---|
 | Auth | `POST auth/signup/`, `POST auth/login/`, `POST auth/refresh/`, `POST auth/logout/`, `GET auth/me/` |
-| Organizations | `GET, POST organizations/`, `GET organizations/{org}/` |
+| Organizations | `GET, POST organizations/`, `GET, DELETE organizations/{org}/` (delete is owner only). Responses include `my_role`. |
 | Content types | `GET, POST organizations/{org}/content-types/`, `GET .../content-types/{ct}/` |
 | Fields | `GET, POST .../content-types/{ct}/fields/`, `GET .../fields/{id}/` |
 | Versions | `GET, POST .../content-types/{ct}/versions/`, `GET .../versions/{id}/` |
 | Entries | `GET, POST .../content-types/{ct}/entries/`, `GET .../entries/{id}/` |
-| API keys | `GET, POST organizations/{org}/api-keys/`, `DELETE organizations/{org}/api-keys/{id}/` (revoke) |
+| API keys | `GET, POST organizations/{org}/api-keys/`, `DELETE organizations/{org}/api-keys/{id}/` (revoke). Admin and owner only. |
+| Members | `GET organizations/{org}/members/`, `PATCH, DELETE .../members/{id}/`, `POST .../members/{id}/transfer-ownership/`, `GET organizations/{org}/user-search/?q=` |
+| Invitations | `GET, POST organizations/{org}/invitations/`, `DELETE .../invitations/{id}/` (cancel); for the invitee: `GET invitations/`, `POST invitations/{id}/accept/`, `POST invitations/{id}/decline/` |
+| Publish requests | `GET, POST .../content-types/{ct}/publish-requests/`, `GET, DELETE .../publish-requests/{id}/`, `POST .../publish-requests/{id}/approve/` and `/reject/` |
+| Notifications | `GET notifications/`, `GET notifications/unread-count/`, `POST notifications/{id}/read/`, `POST notifications/read-all/` |
 | Delivery (API key) | `GET delivery/content-types/` (discover), `GET delivery/content-types/{slug}/` (latest fields), `GET delivery/content-types/{slug}/entries/`, `GET delivery/content-types/{slug}/entries/{id}/` |
 | Health | `GET monitoring/health/` (runs `SELECT 1`; `200` healthy, `503` database unreachable) |
 
@@ -127,6 +131,23 @@ Exact request and response shapes are in [`API-Contract.md`](API-Contract.md).
 **Authentication.** `POST auth/login/` sets two httpOnly cookies: `access_token` (15 minutes, sent on every request) and `refresh_token` (7 days, scoped to `/api/auth/refresh/` only). Both are `SameSite=Lax` and `Secure` when `DEBUG=False`. Clients must send credentials (`fetch(..., { credentials: "include" })`). The bundled frontend retries a request once after a `401` by calling `auth/refresh/`.
 
 **Tenancy.** Organization-scoped routes check the caller's membership: a non-member gets `403`, an organization that does not exist gets `404`, and the organization list and detail routes only ever return organizations the caller belongs to.
+
+## Roles
+
+Every member has one role per organization. A higher role can do everything a lower one can.
+
+| Role | Can |
+|---|---|
+| **Viewer** | Read content types, fields, versions and entries. |
+| **Editor** | Also create, edit, archive and restore entries, and add or archive fields (fields are the draft schema). Can ask for a schema version to be published. |
+| **Admin** | Also create and archive content types, publish a version directly or approve an editor's publish request, manage API keys, invite and remove members. |
+| **Owner** | Also change roles, hand over ownership and delete the organization. Exactly one per organization. |
+
+The API enforces this: a role that is too low gets `403 {"detail": "Your role does not allow this action."}`, checked before the request body is validated. The web app also hides the buttons a role cannot use.
+
+**Publishing.** An editor's field changes stay a draft until a version is published. The editor sends a *publish request* from the Versions tab; an admin or owner sees what would change (added, removed and changed fields), then approves, which publishes the next version, or rejects with a reason. Existing entries stay on the version they were saved under.
+
+**Members.** Admins and the owner find registered users with the search on the Members page and invite them as viewer, editor or admin. The invitee accepts on their account page (or from the notification bell), and only then becomes a member. A new hire therefore has to sign up first. Notifications are in-app only; there is no email.
 
 **Pagination.** Entry lists use cursor pagination: 50 per page, newest first, stable under inserts. Follow the `next` URL in the response.
 
@@ -184,7 +205,9 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-101 tests cover auth, tenancy checks, content types, fields, schema generation, versioning, entry validation, API key management and the delivery API. Django creates and drops a temporary test database. Use a **local** Postgres: against a hosted one the suite takes minutes instead of about 10 seconds.
+275 tests cover auth, tenancy checks, roles, members and invitations, publish requests, notifications, content types, fields, schema generation, versioning, entry validation, API key management and the delivery API. Django creates and drops a temporary test database.
+
+Tests always run on a **local** Postgres: `pytest.ini` selects `content_engine/settings_test.py`, which reads `TEST_DATABASE_URL` (default `postgres://localhost:5432/lattice_test`) and refuses a non-local host. Against the hosted database the suite took about 9 minutes and left sessions behind that broke the next run; locally it takes about 50 seconds. Create the database once with `createdb lattice_test`.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
 
@@ -208,7 +231,7 @@ Vercel and Render redeploy from `master` automatically.
 
 - JWTs live only in httpOnly cookies; the refresh cookie is scoped to the refresh endpoint.
 - API keys are random (`secrets.token_urlsafe(32)`), stored as SHA-256 hashes, revocable, and read-only.
-- Membership checks on every organization-scoped route.
+- Membership checks on every organization-scoped route, then role checks before the request body is validated.
 - Throttling on auth, user and delivery routes; the health endpoint is exempt so probes are never rate limited.
 - With `DEBUG=False`: HTTPS redirect, `Secure` cookies and HSTS are enabled, and Django trusts `X-Forwarded-Proto` from the proxy.
 - Logs avoid credentials: a failed login records only the client IP, and no tokens, cookies or request bodies are logged.
@@ -237,6 +260,6 @@ docker-compose.yml   Local full-stack run
 - Rate-limit counters live in each Gunicorn worker's memory, so with several workers the effective limit is higher than configured. A shared cache (Redis) would fix this.
 - No server-side token revocation yet: a leaked access token stays valid until it expires (15 minutes).
 - Forgot-password and GitHub/Google/Microsoft sign-in appear in the UI as "coming soon" and are not implemented.
-- Entries cannot be filtered or searched by field values, and content cannot be updated or deleted in V1.
+- Entries cannot be filtered or searched by field values, and fields cannot be renamed or edited (only archived).
 - The frontend has no automated tests yet.
 - On the free hosting tiers the CPU is small, so login and signup take 1-2 seconds because of password hashing.

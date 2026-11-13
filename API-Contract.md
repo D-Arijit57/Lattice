@@ -2,6 +2,8 @@
 
 Verified **live on 2026-09-20** against the running Django dev server (a scratch copy of the database, so no real data was touched). Every status code and body shape below was observed in a real response unless it is listed under "Not probed live".
 
+> **Added 2026-11-14: roles, members, invitations, publish requests, notifications.** Those sections (marked *roles*) were not curl-probed like the rest. Their status codes and bodies come from the automated tests (`api/accounts/test_members.py`, `test_notifications.py`, `api/content/test_roles*.py`, `test_publish_requests.py`) and a manual run of every role in a browser. Treat them as verified by tests, not by a live probe.
+
 ## 1. Conventions
 
 | | |
@@ -14,7 +16,7 @@ Verified **live on 2026-09-20** against the running Django dev server (a scratch
 | `refresh_token` cookie | `Path=/api/auth/refresh/` (only sent to that URL), `Max-Age=604800` (7 days), `HttpOnly`, `SameSite=Lax` |
 | `Secure` flag | Not set in dev (`DEBUG=True`); set when `DEBUG=False` |
 | Lists | Bare JSON arrays, **except** entries, which are `{next, previous, results}` |
-| Methods that exist | Only `GET` and `POST`. Everything else returns `405 {"detail": "Method \"PUT\" not allowed."}` |
+| Methods that exist | `GET`, `POST`, `PATCH` (entries, member roles) and `DELETE` (archive/revoke/cancel/remove). `PUT` is not used anywhere and returns `405 {"detail": "Method \"PUT\" not allowed."}` |
 
 ## 2. Endpoints
 
@@ -34,9 +36,10 @@ Verified **live on 2026-09-20** against the running Django dev server (a scratch
 
 | Endpoint | Auth | Sends | Success | Failures |
 |---|---|---|---|---|
-| `GET /api/organizations/` | yes | nothing | `200` bare array of `{id, name, created_at, updated_at}`, only orgs you belong to, ordered by name | `401 {"detail": "Authentication credentials were not provided."}` |
-| `POST /api/organizations/` | yes | `{name}` (whitespace trimmed; client `id` ignored) | `201 {id, name, created_at, updated_at}`. Also makes you the org's first member (`role_id=1`). | `400 {"name": ["This field may not be blank."]}`, `{"name": ["This field is required."]}` |
-| `GET /api/organizations/{org}/` | yes | nothing | `200 {id, name, created_at, updated_at}` | `404 {"detail": "No Organization matches the given query."}` for a nonexistent org **and** an org you are not in |
+| `GET /api/organizations/` | yes | nothing | `200` bare array of `{id, name, my_role, created_at, updated_at}`, only orgs you belong to, ordered by name. `my_role` is your role there (0 viewer, 1 editor, 2 admin, 3 owner). | `401 {"detail": "Authentication credentials were not provided."}` |
+| `POST /api/organizations/` | yes | `{name}` (whitespace trimmed; client `id` ignored) | `201 {id, name, my_role, created_at, updated_at}`. Also makes you the org's first member, as **owner** (`role_id=3`; it was `1` before roles existed). | `400 {"name": ["This field may not be blank."]}`, `{"name": ["This field is required."]}` |
+| `GET /api/organizations/{org}/` | yes | nothing | `200 {id, name, my_role, created_at, updated_at}` | `404 {"detail": "No Organization matches the given query."}` for a nonexistent org **and** an org you are not in |
+| `DELETE /api/organizations/{org}/` | yes, **owner only** *(roles)* | nothing | `204`. Soft delete: the org disappears from every list, its data is kept. | `404` for a nonexistent or archived org and for a non-member. `403 {"detail": "Only an owner can delete the organization."}` for a member who is not the owner. |
 
 ### Content types (all under `/api/organizations/{org}/`)
 
@@ -71,6 +74,87 @@ Verified **live on 2026-09-20** against the running Django dev server (a scratch
 | `POST entries/bulk/` | `{entries: [{...data}, {...data}]}`, 1 to 500 rows, each row is one entry's `data`. All rows attach to the **latest** version. | `201 {created, entries}`; `entries` is a list of the same shape as a single create, numbered consecutively in the order sent. **All-or-nothing.** | `400 {"errors": [{"row": 1, "data": {"price": ["Must be a number."]}}]}`: every bad row is listed, `row` is the **0-based** index into the array sent, and **nothing is saved**. A bad envelope (missing/empty/over 500/non-object rows) is `400 {"entries": ...}` instead. Membership errors, and `404` when the content type has no versions, as for `POST entries/`. |
 | `GET entries/{id}/` | nothing | `200` same shape | `404 {"detail": "No Entry matches the given query."}` |
 
+### Roles (*roles*)
+
+Roles are numbers, and a higher number can do everything a lower one can: **0 viewer < 1 editor < 2 admin < 3 owner**. Each organization has exactly one owner. Every member's role is returned as `my_role` on the organization routes and as `role_id` on member rows.
+
+What each role may do:
+
+| Action | Minimum role |
+|---|---|
+| Read content types, fields, versions, entries | viewer (any member) |
+| Create, edit, archive, restore entries; bulk create; archive all | editor |
+| Add or archive **fields** (the draft schema) | editor |
+| List and read publish requests, create one, withdraw your own | editor |
+| Publish a version directly (`POST versions/`), approve or reject a publish request, withdraw anyone's request | admin |
+| Create or archive content types | admin |
+| List, create and revoke API keys | admin |
+| List members, search users, send and cancel invitations, remove members (see below) | admin |
+| Change a member's role, transfer ownership | owner |
+| Delete the organization | owner |
+
+Order of checks on every `/organizations/{org}/...` route: `401` (not logged in), `404` (org missing or archived), `403` (not a member), then **`403 {"detail": "Your role does not allow this action."}` (role too low), and only then body validation**. A viewer who sends an invalid body therefore gets `403`, never a `400` that would reveal the schema.
+
+### Members (under `/api/organizations/{org}/`) (*roles*)
+
+| Endpoint | Role | Sends | Success | Failures |
+|---|---|---|---|---|
+| `GET members/` | admin | nothing | `200` bare array of `{id, user_id, name, email, role_id, created_at}`, owner first, then by role (high to low) and name. `id` is the **membership** id used in the URLs below. | role `403` |
+| `PATCH members/{id}/` | owner | `{role_id}` where `role_id` is `0`, `1` or `2` | `200` the member row | `400 {"detail": "The owner's role changes through an ownership transfer."}` when the target is the owner (this includes yourself). `400 {"role_id": ["\"3\" is not a valid choice."]}` for owner or unknown roles. `404` for a membership of another org. |
+| `DELETE members/{id}/` | admin | nothing | `204`. The owner may remove anyone except the owner row. An admin may remove editors and viewers only. | `403 {"detail": "You cannot remove this member."}` (admin removing an admin or the owner, or the owner removing themself). `404` for another org's member. |
+| `POST members/{id}/transfer-ownership/` | owner | nothing | `200` the new owner's row. The target becomes owner and you become **admin**, in one locked transaction. | `400 {"detail": "You are already the owner."}` |
+| `GET user-search/?q=ada` | admin | query string `q` | `200` bare array of `{id, name, email}`, **at most 5**, active users who are not members, matched on name or email (case-insensitive substring), ordered by name | `400 {"q": ["Type at least 2 characters."]}` |
+
+### Invitations (*roles*)
+
+Only existing users can be invited. An invitation does nothing until the invitee accepts, and accepting is what creates the membership with the invited role. Status is `pending`, `accepted`, `declined` or `cancelled`; rows are kept as history.
+
+Invitation shape: `{id, organization, organization_name, invited_user, invited_user_name, invited_user_email, invited_by_name, role_id, status, created_at, responded_at}`.
+
+| Endpoint | Role | Sends | Success | Failures |
+|---|---|---|---|---|
+| `GET organizations/{org}/invitations/` | admin | nothing | `200` bare array of this org's **pending** invitations, newest first | role `403` |
+| `POST organizations/{org}/invitations/` | admin | `{invited_user, role_id}` (`invited_user` is a user id; `role_id` is `0`, `1` or `2`) | `201` invitation | `400 {"invited_user": ["This user is already a member."]}`, `["This user already has a pending invitation."]`, `["This user cannot be invited."]` (inactive). `400 {"role_id": ["You cannot invite someone with this role."]}` (includes owner). |
+| `DELETE organizations/{org}/invitations/{id}/` | admin | nothing | `204`. Status becomes `cancelled`. | `404` if not pending or not this org's |
+| `GET invitations/` | login only | nothing | `200` bare array of **your** pending invitations (archived orgs excluded) | `401` |
+| `POST invitations/{id}/accept/` | login only | nothing | `200` invitation (`accepted`). You are now a member with `role_id`. | `404` if it is not yours or no longer pending. `400 {"detail": "You are already a member."}` |
+| `POST invitations/{id}/decline/` | login only | nothing | `200` invitation (`declined`) | `404` as above |
+
+### Publish requests (under `.../content-types/{ct}/publish-requests/`) (*roles*)
+
+Editors change fields as a draft but cannot publish a version. They ask, and an admin or owner approves (which publishes the live fields as the next version) or rejects. Entries already in the database stay on the version they were saved under. One request can be pending per content type.
+
+Shape: `{id, content_type_id, note, status, requested_by, requested_by_name, decided_by, decided_by_name, decision_note, version_number, diff, created_at, decided_at}`. `status` is `pending`, `approved`, `rejected` or `cancelled`. `version_number` is set once approved. `diff` is `null` except on `GET {id}/` and on the create response **while the request is pending**, and is computed from the live fields at the moment you ask: `{added: [{name, type, format, required}], removed: [...], changed: [{name, from: {type, format, required}, to: {...}}]}` (`format` is `"date"`, `"date-time"` or `null`).
+
+| Endpoint | Role | Sends | Success | Failures |
+|---|---|---|---|---|
+| `GET publish-requests/` (`?status=pending`) | editor | nothing | `200` bare array, newest first, `diff` is `null` | role `403`, `404 "Content type not found."` |
+| `POST publish-requests/` | editor | `{note}` (optional, max 500) | `201` request with `diff` | `400 {"detail": "Add at least one field before requesting a publish."}`, `{"detail": "Nothing to publish: the fields match the latest version."}`, `{"detail": "There is already a pending publish request for this content type."}` |
+| `GET publish-requests/{id}/` | editor | nothing | `200` request (with `diff` if pending) | `404` |
+| `DELETE publish-requests/{id}/` | editor, and it must be your own request unless you are admin | nothing | `204`. Status becomes `cancelled`. | `403 {"detail": "Only the requester or an admin can cancel this request."}`, `400 {"detail": "Only a pending request can be cancelled."}` |
+| `POST publish-requests/{id}/approve/` | admin | `{decision_note}` (optional) | `200` request (`approved`, `version_number` set). Creates the version. | `400 {"detail": "This request has already been decided."}`, `{"detail": "Nothing to publish: the fields match the latest version."}` (the draft was reverted since the request) |
+| `POST publish-requests/{id}/reject/` | admin | `{decision_note}` (**required**) | `200` request (`rejected`) | `400 {"decision_note": ["This field is required."]}` (or `may not be blank`), `400 {"detail": "This request has already been decided."}` |
+
+### Notifications (*roles*)
+
+In-app only; there is no email. A notification is written in the same transaction as the action it reports, so a failed action notifies nobody.
+
+| Event | Recipients | `kind` | `payload` keys |
+|---|---|---|---|
+| Invitation sent | the invitee | `invitation` | `invitation_id`, `organization_id` |
+| Publish requested | every admin and the owner, except the requester | `publish_requested` | `organization_id`, `content_type_id`, `content_type_slug`, `publish_request_id` |
+| Publish approved | the requester (not if they approved it themself) | `publish_approved` | same as above |
+| Publish rejected | the requester (not if they rejected it themself) | `publish_rejected` | same as above |
+
+Answering or cancelling an invitation marks its notification read. `message` is plain text written when the event happened and does not change if names change later.
+
+| Endpoint | Sends | Success | Failures |
+|---|---|---|---|
+| `GET notifications/` (`?unread=true`) | nothing | `200` bare array, newest first, **at most 50**, each `{id, kind, message, payload, organization, is_read, read_at, created_at}` | `401` |
+| `GET notifications/unread-count/` | nothing | `200 {"unread": 3}` | `401` |
+| `POST notifications/{id}/read/` | nothing | `200` notification. Idempotent: reading twice keeps the first `read_at`. | `404` for someone else's notification |
+| `POST notifications/read-all/` | nothing | `200 {"marked": 2}`, your own only | `401` |
+
 ### Failures common to every `/organizations/{org}/...` route
 
 | Status | Body | When |
@@ -78,6 +162,7 @@ Verified **live on 2026-09-20** against the running Django dev server (a scratch
 | `401` | `{"detail": "Authentication credentials were not provided."}` | no cookie (bad or expired cookie: the `token_not_valid` shape above) |
 | `404` | `{"detail": "Organization not found."}` | org id does not exist |
 | `403` | `{"detail": "You are not a member of this organization."}` | org exists, you are not in it |
+| `403` | `{"detail": "Your role does not allow this action."}` | you are a member but your role is below what the route needs (see Roles above). Checked **before** the body is validated. |
 
 ## 3. Error shapes the client must handle
 
@@ -103,7 +188,7 @@ Plus one that is **not JSON**: any unknown URL or non-integer id (`/api/nope/`, 
 
 1. **(Fixed) An expired access cookie used to block logout and signup.** `SignupView` and `LogoutView` now set `authentication_classes = []`, so a stale cookie is ignored and both always work. Kept here because older clients may still work around it by refreshing first.
 2. **Org existence leaks, and 403/404 are inconsistent.** `GET /organizations/{id}/` returns `404` for an org you're not in, but `GET /organizations/{id}/content-types/` returns `403 "You are not a member"`, so any logged-in user can tell which org ids exist. Decision 106 says other orgs' rows should look like they don't exist; the membership check in `get_organization()` doesn't follow that.
-3. **Nothing can be edited or deleted.** No `PUT`/`PATCH`/`DELETE` on any resource. A UI "edit entry", "edit field" or "delete content type" has no endpoint to call.
+3. **(Superseded) Nothing can be edited or deleted.** True on 2026-09-20. Entries can now be edited (`PATCH`) and archived, and fields, content types and organizations can be archived (all soft deletes, with role requirements below).
 4. **Version creation with no fields returns a bare JSON array**, unlike every other 400. The `create()` path raises the error outside normal validation, so DRF doesn't wrap it in an object.
 5. **Unknown URLs return an HTML 404**, so a client that always calls `response.json()` will throw on those.
 6. **Signup accepts any string as an email** (`"not-an-email"` returned `201`).
