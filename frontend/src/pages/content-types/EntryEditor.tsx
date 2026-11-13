@@ -11,6 +11,7 @@ import { entries, errorMessage, fieldErrors, versions } from "@/lib/api"
 import { buildPayload, isoToLocalInput, kindOf } from "@/lib/entry-fields"
 import { useApi } from "@/lib/use-api"
 import { useContentTypeFromSlug, useOrgId, useOrgPath } from "@/lib/use-org"
+import { useCan } from "@/lib/org-context"
 import { formatDateTime } from "@/lib/utils"
 
 // One page, two modes:
@@ -23,6 +24,7 @@ export function EntryEditor() {
   const isNew = entryId === undefined
   const orgId = useOrgId()
   const orgPath = useOrgPath()
+  const canEdit = useCan()("editEntries")
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -78,6 +80,18 @@ export function EntryEditor() {
   const version = isNew
     ? versionList.data?.[0]
     : versionList.data?.find((v) => v.id === existing?.content_type_version_id)
+
+  if (isNew && !canEdit) {
+    return (
+      <div className="p-8 max-w-6xl mx-auto">
+        <EmptyState
+          title="You can't create entries"
+          description="Viewers can read entries but not change them. Ask an editor, admin or owner."
+          action={<Button asChild><Link to={`${basePath}/entries`}>Back to entries</Link></Button>}
+        />
+      </div>
+    )
+  }
 
   if (isNew && !version) {
     return (
@@ -166,7 +180,10 @@ export function EntryEditor() {
     return raw === undefined ? "" : String(raw)
   }
 
-  const readOnly = !isNew && archived
+  // Two different reasons the form is not editable: the entry is archived
+  // (an editor can restore it), or the viewer simply may not edit.
+  const readOnly = (!isNew && archived) || !canEdit
+  const canRestore = canEdit && !isNew && archived
   const dirty = Object.keys(values).length > 0
 
   const json = JSON.stringify(payload, null, 2)
@@ -202,8 +219,8 @@ export function EntryEditor() {
           <Button variant="outline" className="bg-white" asChild>
             <Link to={`${basePath}/entries`}>{isNew ? "Cancel" : "Back to entries"}</Link>
           </Button>
-          {isNew && <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save entry"}</Button>}
-          {!isNew && !archived && (
+          {isNew && canEdit && <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save entry"}</Button>}
+          {!isNew && !archived && canEdit && (
             <>
               <Button variant="outline" className="bg-white" onClick={() => setConfirmingArchive(true)} disabled={saving}>
                 Archive
@@ -218,13 +235,19 @@ export function EntryEditor() {
               )}
             </>
           )}
-          {readOnly && <Button onClick={restoreEntry} disabled={saving}>Restore</Button>}
+          {canRestore && <Button onClick={restoreEntry} disabled={saving}>Restore</Button>}
         </div>
       </div>
 
-      {readOnly && (
+      {!isNew && archived && (
         <p className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          This entry is archived: it is hidden from the entries list and the delivery API. Restore it to edit.
+          This entry is archived: it is hidden from the entries list and the delivery API.
+          {canEdit ? " Restore it to edit." : ""}
+        </p>
+      )}
+      {!canEdit && !archived && (
+        <p className="mb-6 rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+          You can view this entry but not change it.
         </p>
       )}
       {saved && !dirty && (

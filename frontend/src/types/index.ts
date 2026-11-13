@@ -5,6 +5,9 @@
 export type Organization = {
   id: number;
   name: string;
+  // The signed-in user's role in this organization, as the number the backend
+  // stores (0 viewer ... 3 owner). Compare it with ROLE in lib/roles.ts.
+  my_role: number;
   created_at: string;
   updated_at: string;
 };

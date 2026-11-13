@@ -1,7 +1,7 @@
 import pytest
 from django.urls import reverse
 
-from accounts.models import Organization, OrganizationMembership, User
+from accounts.models import Organization, OrganizationMembership, Role, User
 
 # reverse() turns the name= we set in urls.py into the path string.
 LIST_URL = reverse("organization-list")  # -> "/api/organizations/"
@@ -23,7 +23,7 @@ def test_authenticated_user_can_create_org(api_client, user):
     # perform_create() writes the Organization AND the membership.
     org = Organization.objects.get(name="Acme")
     membership = OrganizationMembership.objects.get(organization=org, user=user)
-    assert membership.role_id == 1  # OWNER_ROLE_ID
+    assert membership.role_id == Role.OWNER
 
 
 # Triage note (2026-09-20): the stub "anonymous user cannot create org" was
@@ -52,8 +52,8 @@ def test_list_only_returns_orgs_i_belong_to(api_client, user):
     )
     mine = Organization.objects.create(name="Mine")
     theirs = Organization.objects.create(name="Theirs")
-    OrganizationMembership.objects.create(user=user, organization=mine, role_id=1)
-    OrganizationMembership.objects.create(user=other_user, organization=theirs, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=mine, role_id=Role.OWNER)
+    OrganizationMembership.objects.create(user=other_user, organization=theirs, role_id=Role.OWNER)
     api_client.force_authenticate(user=user)
 
     response = api_client.get(LIST_URL)
@@ -80,7 +80,7 @@ def test_retrieve_non_member_org_returns_404(api_client, user):
 @pytest.mark.django_db
 def test_member_can_archive_an_organization(api_client, user):
     org = Organization.objects.create(name="Acme")
-    OrganizationMembership.objects.create(user=user, organization=org, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=org, role_id=Role.OWNER)
     api_client.force_authenticate(user=user)
     detail = reverse("organization-detail", args=[org.id])
 
@@ -111,7 +111,7 @@ def test_api_key_of_an_archived_organization_stops_working(api_client, user):
     from accounts.models import APIKey, hash_api_key
 
     org = Organization.objects.create(name="Acme")
-    OrganizationMembership.objects.create(user=user, organization=org, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=org, role_id=Role.OWNER)
     APIKey.objects.create(organization=org, name="k", hashed_key=hash_api_key("lat_orgkey"))
     headers = {"HTTP_AUTHORIZATION": "Bearer lat_orgkey"}
     assert api_client.get("/api/delivery/content-types/", **headers).status_code == 200

@@ -7,6 +7,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { contentTypes } from "@/lib/api"
 import { useContentTypeFromSlug, useOrgId, useOrgPath } from "@/lib/use-org"
+import { useCan } from "@/lib/org-context"
 import { cn } from "@/lib/utils"
 import type { ContentType } from "@/types"
 
@@ -28,6 +29,7 @@ export function ContentTypeWorkspace() {
   const location = useLocation()
   const navigate = useNavigate()
   const orgId = useOrgId()
+  const can = useCan()
   const orgPath = useOrgPath()
   const { contentType, loading, error, reload } = useContentTypeFromSlug()
   // Hooks must run on every render, so this stays above the early returns below.
@@ -66,9 +68,11 @@ export function ContentTypeWorkspace() {
             <Badge variant="secondary" className="font-mono">{contentType.slug}</Badge>
           </div>
         </div>
-        <Button variant="outline" className="ml-auto bg-white text-red-600 hover:text-red-700" onClick={() => setConfirmingDelete(true)}>
-          <Trash2 className="w-4 h-4 mr-2" /> Delete
-        </Button>
+        {can("manageContentTypes") && (
+          <Button variant="outline" className="ml-auto bg-white text-red-600 hover:text-red-700" onClick={() => setConfirmingDelete(true)}>
+            <Trash2 className="w-4 h-4 mr-2" /> Delete
+          </Button>
+        )}
       </div>
 
       <ConfirmDialog

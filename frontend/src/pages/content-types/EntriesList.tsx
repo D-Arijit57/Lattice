@@ -11,6 +11,7 @@ import { cursorFrom, entries, errorMessage, versions } from "@/lib/api"
 import { displayValue, kindOf } from "@/lib/entry-fields"
 import { useApi } from "@/lib/use-api"
 import { useOrgId, useOrgPath } from "@/lib/use-org"
+import { useCan } from "@/lib/org-context"
 import { formatDateTime } from "@/lib/utils"
 import type { Entry } from "@/types"
 import { useContentType } from "./ContentTypeWorkspace"
@@ -26,6 +27,7 @@ export function EntriesList() {
   const contentType = useContentType()
   const orgId = useOrgId()
   const orgPath = useOrgPath()
+  const canEdit = useCan()("editEntries")
   const basePath = orgPath(`/content-types/${contentType.slug}`)
 
   const versionList = useApi(() => versions.list(orgId, contentType.id), [orgId, contentType.id])
@@ -130,7 +132,7 @@ export function EntriesList() {
             ))}
           </div>
         </div>
-        {latest && !showArchived && (
+        {latest && !showArchived && canEdit && (
           <div className="flex items-center gap-3">
             {BULK_IMPORT_ENABLED && (
               <Button variant="outline" className="bg-white" onClick={() => setImportOpen(true)}>
@@ -201,8 +203,8 @@ export function EntriesList() {
         <div className="bg-white border border-neutral-200 shadow-sm rounded-xl">
           <EmptyState
             title={showArchived ? "No archived entries" : "No entries yet"}
-            description={showArchived ? "Archived entries show up here and can be restored." : "Create the first one."}
-            action={showArchived ? undefined : <Button asChild><Link to={`${basePath}/entries/new`}>New entry</Link></Button>}
+            description={showArchived ? "Archived entries show up here and can be restored." : canEdit ? "Create the first one." : "An editor, admin or owner can create the first one."}
+            action={showArchived || !canEdit ? undefined : <Button asChild><Link to={`${basePath}/entries/new`}>New entry</Link></Button>}
           />
         </div>
       ) : (
@@ -216,7 +218,7 @@ export function EntriesList() {
                 ))}
                 <TableHead>Version</TableHead>
                 <TableHead>Created</TableHead>
-                {!showArchived && <TableHead className="w-10" />}
+                {!showArchived && canEdit && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -234,7 +236,7 @@ export function EntriesList() {
                   ))}
                   <TableCell className="font-mono text-sm text-neutral-500">v{entry.version_number}</TableCell>
                   <TableCell className="text-neutral-500 text-sm">{formatDateTime(entry.created_at)}</TableCell>
-                  {!showArchived && (
+                  {!showArchived && canEdit && (
                     <TableCell>
                       <Button variant="ghost" size="icon" aria-label={`Delete entry #${entry.number}`} onClick={() => setDeleting(entry)}>
                         <Trash2 className="w-4 h-4 text-neutral-500" />

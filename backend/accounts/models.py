@@ -3,6 +3,12 @@ import hashlib
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.db import models
 
+
+class Role(models.IntegerChoices): # .IntergerChoices : enum for Django
+    VIEWER = 0, "Viewer"
+    EDITOR = 1, "Editor"
+    ADMIN = 2, "Admin"
+    OWNER = 3, "Owner"
 # Lives here, not in a views.py, because it's needed by low-level modules
 # (the delivery authentication class) that can't safely import a DRF views
 # module - views.py pulls in the whole viewsets machinery, which creates a
@@ -67,7 +73,15 @@ class OrganizationMembership(models.Model):
         on_delete=models.CASCADE,
         related_name="memberships",
     )
-    role_id = models.IntegerField()
+    # role type: 
+    '''
+    - Viewer: read only.
+    - Editor: create, edit and archive entries.
+    - Admin: schema changes, deletes and API keys.
+    - Owner: everything, plus org delete (still to confirm).
+    '''
+    # by default the role is viewer
+    role_id = models.IntegerField(choices=Role.choices, default=Role.VIEWER)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -99,3 +113,78 @@ class APIKey(models.Model):
     def __str__(self):
         return f"{self.organization}"
         
+
+# An invitation asks an existing user to join an organization with a role.
+# Nothing changes for the invitee until they accept: accepting is what creates
+# the OrganizationMembership. The role is never OWNER (ownership is transferred,
+# not invited).
+class Invitation(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ACCEPTED = "accepted", "Accepted"
+        DECLINED = "declined", "Declined"
+        CANCELLED = "cancelled", "Cancelled"
+
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="invitations"
+    )
+    invited_user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="invitations"
+    )
+    invited_by = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="sent_invitations"
+    )
+    role_id = models.IntegerField(choices=Role.choices)
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            # at most one pending invitation per person per organization
+            models.UniqueConstraint(
+                fields=["organization", "invited_user"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_invitation",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.invited_user} -> {self.organization} ({self.status})"
+
+
+# A message for one user, shown in the in-app bell. It is written when
+# something happens (an invitation, a publish request, a decision) and the
+# recipient marks it read. `payload` holds the ids the frontend needs to link to
+# the thing it is about; `message` is stored as plain text so old notifications
+# keep reading the same even if names change later.
+class Notification(models.Model):
+    class Kind(models.TextChoices):
+        INVITATION = "invitation", "Invitation"
+        PUBLISH_REQUESTED = "publish_requested", "Publish requested"
+        PUBLISH_APPROVED = "publish_approved", "Publish approved"
+        PUBLISH_REJECTED = "publish_rejected", "Publish rejected"
+
+    recipient = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="notifications"
+    )
+    organization = models.ForeignKey(
+        Organization, null=True, blank=True, on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    message = models.CharField(max_length=500)
+    payload = models.JSONField(default=dict, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            # the bell asks for "my newest" and "my unread count"
+            models.Index(fields=["recipient", "-created_at"], name="notif_recipient_recent"),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} -> {self.recipient}"

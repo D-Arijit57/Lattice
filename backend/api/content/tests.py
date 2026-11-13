@@ -2,7 +2,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from accounts.models import Organization, OrganizationMembership
+from accounts.models import Organization, OrganizationMembership, Role
 from api.content.serializers import MAX_BULK_ENTRIES, EntrySerializer
 from content.models import ContentType, ContentTypeVersion, Entry, Field
 from content.services.entry_validation import NON_FIELD_ERRORS
@@ -54,7 +54,7 @@ def test_field_under_content_type_from_another_org_returns_404(api_client, user)
     #         get_content_type() looks up the content type scoped to org_a
     #         and finds nothing, since it actually belongs to org_b.
     organizationA = Organization.objects.create(name = "Netflix")
-    OrganizationMembership.objects.create(user=user, organization=organizationA, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organizationA, role_id=Role.OWNER)
 
     organizationB = Organization.objects.create(name = "Amazon-Prime")
     content_typeB = ContentType.objects.create(organization = organizationB, name = "Jack-Ryan", slug="movie")
@@ -75,7 +75,7 @@ def test_valid_field_creation_succeeds(api_client, user):
     content_type = ContentType.objects.create(
         organization=organization, name="Event", slug="event"
     )
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
 
     api_client.force_authenticate(user=user)
     url = reverse("field-list", args=[organization.id, content_type.id])
@@ -105,7 +105,7 @@ def test_invalid_data_type_is_rejected(api_client, user):
     content_type = ContentType.objects.create(
         organization=organization, name="Event", slug="event"
     )
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
 
     api_client.force_authenticate(user=user)
     url = reverse("field-list", args=[organization.id, content_type.id])
@@ -137,7 +137,7 @@ def test_duplicate_field_name_is_rejected(api_client, user):
     content_type = ContentType.objects.create(
         organization=organization, name="Event", slug="event"
     )
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
     Field.objects.create(content_type=content_type, name="title", data_type="string")
 
     api_client.force_authenticate(user=user)
@@ -159,7 +159,7 @@ def test_list_only_returns_fields_for_this_content_type(api_client, user):
     # tests get_queryset()'s .filter(content_type=content_type), proving a
     # request for content_type_a's fields can't see content_type_b's.
     organization = Organization.objects.create(name="Acme")
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
 
     content_type_a = ContentType.objects.create(
         organization=organization, name="Event", slug="event"
@@ -191,7 +191,7 @@ def test_retrieve_field_succeeds(api_client, user):
     content_type = ContentType.objects.create(
         organization=organization, name="Event", slug="event"
     )
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
     field = Field.objects.create(content_type=content_type, name="title", data_type="string")
 
     api_client.force_authenticate(user=user)
@@ -233,7 +233,7 @@ def test_retrieve_field_succeeds(api_client, user):
 def member_org(user):
     # An Organization that `user` belongs to (role_id=1 is the owner role).
     organization = Organization.objects.create(name="Acme")
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
     return organization
 
 
@@ -279,7 +279,7 @@ def test_duplicate_slug_in_same_org_is_rejected(api_client, user, member_org):
     # The unique rule is the PAIR (organization, slug), not slug alone
     # (Decision 13): the same slug must still be allowed in a different org.
     other_org = Organization.objects.create(name="Other")
-    OrganizationMembership.objects.create(user=user, organization=other_org, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=other_org, role_id=Role.OWNER)
     response = api_client.post(
         reverse("content-type-list", args=[other_org.id]),
         {"name": "Event", "slug": "event"},
@@ -533,7 +533,7 @@ def product_setup(user):
     # an Organization that owns a "Product" ContentType with two required
     # Fields and one published version (no version -> the view returns 404).
     organization = Organization.objects.create(name="Amazon")
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
     content_type = ContentType.objects.create(
         organization=organization, name="Product", slug="product"
     )
@@ -903,7 +903,7 @@ def test_entry_list_is_oldest_first_across_pages(api_client, user, product_setup
 @pytest.fixture
 def event_setup(user):
     organization = Organization.objects.create(name="Events Inc")
-    OrganizationMembership.objects.create(user=user, organization=organization, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=organization, role_id=Role.OWNER)
     content_type = ContentType.objects.create(organization=organization, name="Event", slug="event")
     Field.objects.create(content_type=content_type, name="starts_at", data_type="datetime", required=True)
     version = create_content_type_version(content_type=content_type)
@@ -996,7 +996,7 @@ def test_archived_content_type_is_hidden_from_the_delivery_api(api_client, user,
 def test_archive_content_type_of_another_org_returns_404(api_client, user, product_setup):
     organization, content_type, _ = product_setup
     mine = Organization.objects.create(name="Mine")
-    OrganizationMembership.objects.create(user=user, organization=mine, role_id=1)
+    OrganizationMembership.objects.create(user=user, organization=mine, role_id=Role.OWNER)
     api_client.force_authenticate(user=user)
 
     response = api_client.delete(reverse("content-type-detail", args=[mine.id, content_type.pk]))

@@ -9,6 +9,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { CreateOrganizationForm } from "@/components/forms/CreateOrganizationForm"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { useAuth } from "@/lib/auth-context"
+import { OrgProvider } from "@/lib/org-context"
+import { roleCan, roleLabel } from "@/lib/roles"
 import { organizations } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import type { Organization } from "@/types"
@@ -41,6 +43,9 @@ function Sidebar({
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // The sidebar is drawn by AppShell itself, above the provider, so it reads
+  // the role straight from the organization it was given.
+  const can = (permission: Parameters<typeof roleCan>[1]) => roleCan(current.my_role, permission)
   const base = `/orgs/${current.id}`
 
   return (
@@ -78,9 +83,11 @@ function Sidebar({
             <DropdownMenuItem onClick={() => setCreateOpen(true)}>
               <Plus className="w-4 h-4 mr-2" /> Create organization
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-red-600 focus:text-red-700">
-              <Trash2 className="w-4 h-4 mr-2" /> Delete "{current.name}"
-            </DropdownMenuItem>
+            {can("deleteOrganization") && (
+              <DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-red-600 focus:text-red-700">
+                <Trash2 className="w-4 h-4 mr-2" /> Delete "{current.name}"
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -148,10 +155,12 @@ function Sidebar({
           Settings
         </div>
         <nav className="grid gap-1 px-3">
-          <NavLink to={`${base}/api-keys`} className={({ isActive }) => navLinkClass(isActive)}>
-            <KeyRound className="h-4 w-4" />
-            API Keys
-          </NavLink>
+          {can("manageApiKeys") && (
+            <NavLink to={`${base}/api-keys`} className={({ isActive }) => navLinkClass(isActive)}>
+              <KeyRound className="h-4 w-4" />
+              API Keys
+            </NavLink>
+          )}
         </nav>
       </div>
 
@@ -164,7 +173,7 @@ function Sidebar({
               </div>
               <div className="flex-1 overflow-hidden text-sm">
                 <p className="truncate font-medium text-neutral-900">{user?.name}</p>
-                <p className="truncate text-xs text-neutral-500">{user?.email}</p>
+                <p className="truncate text-xs text-neutral-500">{user?.email} · {roleLabel(current.my_role)}</p>
               </div>
               <span className="text-neutral-400 text-xs">▼</span>
             </button>
@@ -207,7 +216,10 @@ export function AppShell() {
     <div className="flex min-h-screen bg-[#fafafa]">
       <Sidebar current={current} all={orgs.data ?? []} onOrganizationCreated={orgs.reload} />
       <main className="flex-1 overflow-y-auto">
-        <Outlet />
+        {/* Every page below reads the organization and the caller's role from here. */}
+        <OrgProvider organization={current}>
+          <Outlet />
+        </OrgProvider>
       </main>
     </div>
   )

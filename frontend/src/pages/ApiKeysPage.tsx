@@ -16,10 +16,28 @@ import { NewApiKeyDialog } from "@/components/forms/NewApiKeyDialog"
 import { apiKeys, errorMessage } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import { useOrgId } from "@/lib/use-org"
+import { useCan } from "@/lib/org-context"
 import { formatDate } from "@/lib/utils"
 import type { APIKey } from "@/types"
 
+// The guard is a separate component so the content below (which loads the keys
+// from the API) never even starts for someone the API would refuse.
 export function ApiKeysPage() {
+  const can = useCan()
+  if (!can("manageApiKeys")) {
+    return (
+      <div className="p-8 max-w-6xl mx-auto">
+        <EmptyState
+          title="API keys are for admins"
+          description="Ask an admin or the owner of this organization if you need one."
+        />
+      </div>
+    )
+  }
+  return <ApiKeysContent />
+}
+
+function ApiKeysContent() {
   const orgId = useOrgId()
   const [newOpen, setNewOpen] = useState(false)
   // The key currently in the revoke-confirm dialog; null means it's closed.

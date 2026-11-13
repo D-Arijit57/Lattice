@@ -6,12 +6,14 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states"
 import { errorMessage, versions } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import { useOrgId } from "@/lib/use-org"
+import { useCan } from "@/lib/org-context"
 import { formatDateTime } from "@/lib/utils"
 import { useContentType } from "./ContentTypeWorkspace"
 
 export function SchemaVersions() {
   const contentType = useContentType()
   const orgId = useOrgId()
+  const can = useCan()
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
@@ -47,9 +49,11 @@ export function SchemaVersions() {
             Each version is a frozen snapshot of the fields. Entries are validated against the newest one.
           </p>
         </div>
-        <Button onClick={publish} disabled={publishing}>
-          <Plus className="w-4 h-4 mr-2" /> {publishing ? "Publishing..." : "New version"}
-        </Button>
+        {can("publishVersion") && (
+          <Button onClick={publish} disabled={publishing}>
+            <Plus className="w-4 h-4 mr-2" /> {publishing ? "Publishing..." : "New version"}
+          </Button>
+        )}
       </div>
 
       {publishError && (
